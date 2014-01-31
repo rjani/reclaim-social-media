@@ -20,7 +20,18 @@
     	{
         	"type": "vcs",
 	        "url": "https://github.com/diplix/URLResolver.php"
-	    }
+	    },
+		{
+			"type": "package",
+            "package": {
+                "name": "jqplot",
+                "version": "1.0.8",
+                "dist": {
+                    "url": "https://bitbucket.org/cleonello/jqplot/downloads/jquery.jqplot.1.0.8r1250.zip",
+                    "type": "zip"
+                }
+			}
+		}
 	],
     "require": {
         "php": ">=5.2.4",
@@ -28,7 +39,8 @@
         "simple-html-dom/simple-html-dom": "*",
         "hybridauth/hybridauth": "dev-master",
         "euskadi31/opengraph": "dev-master",
-        "diplix/URLResolver.php": "dev-master"
+        "diplix/URLResolver.php": "dev-master",
+		"jqplot": "*"
     },
 	"autoload": {
     	"classmap": [

@@ -17,12 +17,14 @@
 */
 
 class foursquare_reclaim_module extends reclaim_module {
-    private static $apiurl= "https://api.foursquare.com/v2/users/self/checkins?limit=%s&oauth_token=%s&v=20140120";
+//    private static $apiurl= "https://api.foursquare.com/v2/users/self/checkins?limit=%s&oauth_token=%s&v=20140120";
+    private static $apiurl= "https://api.foursquare.com/v2/users/self/checkins?limit=%s&afterTimestamp=%s&sort=oldestfirst&oauth_token=%s&v=%s";
 
     private static $timeout = 15;
-    private static $count = 31; // maximum 31 days
+    private static $limit   = 30;
+	private static $subtract = 120; // To avoid missing results when polling, we subtracting several seconds from the last poll time
     private static $post_format = 'status'; // or 'status', 'aside'
-
+	
 // callback-url: http://root.wirres.net/reclaim/wp-content/plugins/reclaim/vendor/hybridauth/hybridauth/src/
 // new app: http://instagram.com/developer/clients/manage/
 
@@ -34,6 +36,7 @@ class foursquare_reclaim_module extends reclaim_module {
         parent::register_settings($this->shortname);
 
         register_setting('reclaim-social-settings', 'foursquare_user_id');
+		register_setting('reclaim-social-settings', 'foursquare_user_name');
         register_setting('reclaim-social-settings', 'foursquare_client_id');
         register_setting('reclaim-social-settings', 'foursquare_client_secret');
         register_setting('reclaim-social-settings', 'foursquare_access_token');
@@ -54,9 +57,10 @@ class foursquare_reclaim_module extends reclaim_module {
                 update_option('foursquare_access_token', $user_access_tokens->access_token);
             }
             if(session_id()) {
-                session_destroy ();
+                // session_destroy ();
             }
         }
+		// print_r($_SESSION);
 ?>
         <tr valign="top">
             <th colspan="2"><h3><?php _e('foursquare', 'reclaim'); ?></h3></th>
@@ -65,6 +69,19 @@ class foursquare_reclaim_module extends reclaim_module {
         parent::display_settings($this->shortname);
 ?>
         <tr valign="top">
+            <th scope="row"><?php _e('Foursquare user ID', 'reclaim'); ?></th>
+            <td><?php echo get_option('foursquare_user_id'); ?>
+            <input type="hidden" name="foursquare_user_id" value="<?php echo get_option('foursquare_user_id'); ?>" />
+            </td>
+        </tr>
+        <tr valign="top">
+            <th scope="row"><?php _e('Foursquare user name', 'reclaim'); ?></th>
+            <td><?php echo get_option('foursquare_user_name'); ?>
+            <input type="hidden" name="foursquare_user_name" value="<?php echo get_option('foursquare_user_name'); ?>" />
+            </td>
+        </tr>
+
+        <tr valign="top">
             <th scope="row"><?php _e('foursquare client id', 'reclaim'); ?></th>
             <td><input type="text" name="foursquare_client_id" value="<?php echo get_option('foursquare_client_id'); ?>" />
             </td>
@@ -72,7 +89,6 @@ class foursquare_reclaim_module extends reclaim_module {
         <tr valign="top">
             <th scope="row"><?php _e('foursquare client secret', 'reclaim'); ?></th>
             <td><input type="text" name="foursquare_client_secret" value="<?php echo get_option('foursquare_client_secret'); ?>" />
-            <input type="hidden" name="foursquare_user_id" value="<?php echo get_option('foursquare_user_id'); ?>" />
             <input type="hidden" name="foursquare_access_token" value="<?php echo get_option('foursquare_access_token'); ?>" />
             <p class="description">Get your Foursqaure client and credentials <a href="https://de.foursquare.com/developers/apps">here</a>. Use <code><?php echo plugins_url('reclaim/vendor/hybridauth/hybridauth/hybridauth/') ?></code> as "Redirect URI"</p>
             </td>
@@ -104,7 +120,7 @@ class foursquare_reclaim_module extends reclaim_module {
                 echo '<a class="button button-secondary" href="'
                     .plugins_url( '/helper/hybridauth/hybridauth_helper.php' , dirname(__FILE__) )
                     .'?'
-                    .'&mod='.$this->shortname
+                    .'mod='.$this->shortname
                     .'&callbackUrl='.$callback
                     .'">'.$link_text.'</a>';
             }
@@ -126,7 +142,10 @@ class foursquare_reclaim_module extends reclaim_module {
             "providers" => array (
                 "Foursquare" => array(
                     "enabled" => true,
-                    "keys"    => array ( "id" => get_option('foursquare_client_id'), "secret" => get_option('foursquare_client_secret') ),
+                    "keys"    => array ( 
+						"id" => get_option('foursquare_client_id'), 
+						"secret" => get_option('foursquare_client_secret'),
+					),
                 ),
             ),
         );
@@ -135,15 +154,35 @@ class foursquare_reclaim_module extends reclaim_module {
 
     public function import() {
         if (get_option('foursquare_user_id') && get_option('foursquare_access_token') ) {
-            $rawData = parent::import_via_curl(sprintf(self::$apiurl, self::$count, get_option('foursquare_access_token')), self::$timeout);
-            $rawData = json_decode($rawData, true);
+			$max_time = time() + ini_get('max_execution_time') - self::$timeout;
+			
+			$lastUpdate = get_option( 'reclaim_foursquare_last_update' );
+			
+			do {
+				if( $lastUpdate > self::$subtract ) {
+					$lastUpdate = $lastUpdate - self::$subtract;
+				}
+				
+				$url = sprintf(self::$apiurl, self::$limit, $lastUpdate, get_option('foursquare_access_token'), date('Ymd') );
+				$rawData = parent::import_via_curl($url, self::$timeout);
+				$rawData = json_decode($rawData, true);
+				
+				if(! $rawData ){
+					parent::log(sprintf(__('%s returned no data. No import was done', 'reclaim'), $this->shortname));
+					return;
+				}
+				$results = count( $rawData['response']['checkins']['items'] );
 
-            if ($rawData) {
-                $data = $this->map_data($rawData);
-                parent::insert_posts($data);
-                update_option('reclaim_'.$this->shortname.'_last_update', current_time('timestamp'));
-            }
-            else parent::log(sprintf(__('%s returned no data. No import was done', 'reclaim'), $this->shortname));
+				
+				if( $results > 0 ) {
+					// merke den timestamp des neusten checkins
+					$lastUpdate = $rawData['response']['checkins']['items'][ $results-1 ]['createdAt'];
+						
+					$data = $this->map_data($rawData);
+					parent::insert_posts($data);
+					update_option('reclaim_foursquare_last_update', $lastUpdate);
+				} 
+			} while( $results >= self::$limit ||  $max_time <= time() );
         }
         else parent::log(sprintf(__('%s user data missing. No import was done', 'reclaim'), $this->shortname));
     }
