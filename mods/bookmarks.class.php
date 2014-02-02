@@ -33,7 +33,7 @@ class bookmarks_reclaim_module extends reclaim_module {
     public function display_settings() {
 ?>
         <tr valign="top">
-            <th colspan="2"><h3><?php _e('Bookmarks', 'reclaim'); ?></h3></th>
+            <th colspan="2"><a name="<?php echo $this->shortName(); ?>"></a><h3><?php _e('Bookmarks', 'reclaim'); ?></h3></th>
         </tr>
 <?php
         parent::display_settings($this->shortname);
@@ -103,8 +103,18 @@ class bookmarks_reclaim_module extends reclaim_module {
             // filter tags, tnx to http://stackoverflow.com/questions/369602/delete-an-element-from-an-array
             $tags = array_diff($tags, array("w", "s"));
 
-            $post_meta["_".$this->shortname."_link_id"] = $entry["id"];
+            /*
+            *  set post meta galore start
+            */
+            $post_meta["_".$this->shortname."_link_id"] = $id;
             $post_meta["_post_generator"] = $this->shortname;
+            // in case someone uses WordPress Post Formats Admin UI
+            // http://alexking.org/blog/2011/10/25/wordpress-post-formats-admin-ui
+            $post_meta["_format_link_url"]  = $link;
+            /*
+            *  set post meta galore end
+            */
+            
 
             $data[] = array(
                 'post_author' => get_option(self::shortName().'_author'),
@@ -119,7 +129,8 @@ class bookmarks_reclaim_module extends reclaim_module {
                 'ext_permalink' => $link,
                 'ext_image' => $image_url,
                 'tags_input' => $tags,
-                'ext_guid' => $id
+                'ext_guid' => $id,
+                'post_meta' => $post_meta
             );
 
         }
