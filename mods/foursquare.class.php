@@ -21,7 +21,6 @@ class foursquare_reclaim_module extends reclaim_module {
 	private static $apiurl_count= "https://api.foursquare.com/v2/users/self/checkins?limit=1&oauth_token=%s&v=20140120";
 	private static $apiurl= "https://api.foursquare.com/v2/users/self/checkins?limit=%s&afterTimestamp=%s&sort=oldestfirst&oauth_token=%s&v=%s";
 
-
     private static $timeout = 15;
     private static $limit   = 30;
 	private static $subtract = 120; // To avoid missing results when polling, we subtracting several seconds from the last poll time
@@ -157,35 +156,33 @@ class foursquare_reclaim_module extends reclaim_module {
 
     public function import() {
         if (get_option('foursquare_user_id') && get_option('foursquare_access_token') ) {
-			$max_time = time() + ini_get('max_execution_time') - self::$timeout;
-			
-			$lastUpdate = get_option( 'reclaim_foursquare_last_update' );
+			$last_update = get_option( 'reclaim_foursquare_last_update' );
 			
 			do {
-				if( $lastUpdate > self::$subtract ) {
-					$lastUpdate = $lastUpdate - self::$subtract;
+				if( $last_update > self::$subtract ) {
+					$last_update = $last_update - self::$subtract;
 				}
 				
-				$url = sprintf(self::$apiurl, self::$limit, $lastUpdate, get_option('foursquare_access_token'), date('Ymd') );
+				$url = sprintf(self::$apiurl, self::$limit, $last_update, get_option('foursquare_access_token'), date('Ymd') );
 				$rawData = parent::import_via_curl($url, self::$timeout);
 				$rawData = json_decode($rawData, true);
 				
-				if(! $rawData ){
-					parent::log(sprintf(__('%s returned no data. No import was done', 'reclaim'), $this->shortname));
-					return;
-				}
-				$results = count( $rawData['response']['checkins']['items'] );
-
+				if( $rawData && isset($rawData['response']['checkins']['items']) ){
+					// count
+					$results = count( $rawData['response']['checkins']['items'] );
 				
-				if( $results > 0 ) {
-					// merke den timestamp des neusten checkins
-					$lastUpdate = $rawData['response']['checkins']['items'][ $results-1 ]['createdAt'];
+					if( $results > 0 ) {
+						// remember the timestamp (take the last one, sort=oldestfirst)
+						$last_update = $rawData['response']['checkins']['items'][ $results-1 ]['createdAt'];
 						
-					$data = $this->map_data($rawData);
-					parent::insert_posts($data);
-					update_option('reclaim_foursquare_last_update', $lastUpdate);
-				} 
-			} while( $results >= self::$limit ||  $max_time <= time() );
+						$data = $this->map_data($rawData);
+						parent::insert_posts($data);
+						update_option('reclaim_foursquare_last_update', $lastUpdate);
+					}
+				} else {
+					parent::log(sprintf(__('%s returned no data. No import was done', 'reclaim'), $this->shortname));
+				}
+			} while( $results >= self::$limit );
         }
         else parent::log(sprintf(__('%s user data missing. No import was done', 'reclaim'), $this->shortname));
     }
