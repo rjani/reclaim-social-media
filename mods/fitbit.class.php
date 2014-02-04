@@ -230,6 +230,8 @@ class fitbit_reclaim_module extends reclaim_module {
         $config = array(
             // "base_url" the url that point to HybridAuth Endpoint (where the index.php and config.php are found)
             "base_url" => plugins_url('reclaim/vendor/hybridauth/hybridauth/hybridauth/'),
+			"debug_mode" => true,
+			"debug_file" => dirname(__FILE__) . '/../reclaim-log.txt',
             "providers" => array (
                 "Fitbit" => array(
                     "enabled" => true,

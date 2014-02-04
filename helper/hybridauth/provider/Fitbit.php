@@ -19,7 +19,7 @@ class Hybrid_Providers_Fitbit extends Hybrid_Provider_Model_OAuth1
 	{
 		parent::initialize();
 		
-		// $this->api->api_base_url      = "http://api.fitbit.com/1/user/-/";
+		$this->api->api_base_url      = "http://api.fitbit.com/1/user/-/";
 		$this->api->authorize_url     = "http://api.fitbit.com/oauth/authorize";
 		$this->api->request_token_url = "http://api.fitbit.com/oauth/request_token";
 		$this->api->access_token_url  = "http://api.fitbit.com/oauth/access_token";
