@@ -40,6 +40,7 @@ define('RECLAIM_PLUGIN_PATH', dirname( __FILE__));
 class reclaim_core {
     private $mods_loaded = array();
     private static $instance = 0;
+    private static $options_page_url = 'options-general.php?page=reclaim/reclaim.php';
 
     public function __construct() {
         add_action('init', array($this, 'myStartSession'),1,1);
@@ -63,13 +64,20 @@ class reclaim_core {
             if (is_admin()) {
             	if (isset($_REQUEST[$mod['name'].'_resync'])) {
 	                $this->updateMod($mod, true);
+	                if (wp_redirect(self::$options_page_url.'#'.$mod['name'])) {
+	                	exit;
+	                }
             	} else if (isset($_REQUEST[$mod['name'].'_reset'])) {
             		$this->resetMod($mod);
+            		if (wp_redirect(self::$options_page_url.'#'.$mod['name'])) {
+	                	exit;
+	                }
             	}
             }
         }
 
         add_action('admin_menu', array($this, 'admin_menu'));
+        add_action('admin_enqueue_scripts', array($this, 'admin_stylesheets'));
         add_action('wp_enqueue_scripts', array($this, 'prefix_add_reclaim_stylesheet'));
         
         //dashboard widget
@@ -141,6 +149,11 @@ class reclaim_core {
 //
     }
     
+    public function admin_stylesheets() {
+    	wp_register_style('admin-reclaim-style', plugins_url('css/style_admin.css', __FILE__));
+    	wp_enqueue_style('admin-reclaim-style');
+    }
+    
     public function add_dashboard_widgets() {
     	if (is_admin()) {
     		wp_add_dashboard_widget('reclaim-dashboardwidget', 'Reclaim Status', array($this, 'status_widget') );
@@ -148,7 +161,6 @@ class reclaim_core {
     }
     
     public function status_widget() {
-    	$options_page_url='options-general.php?page=reclaim/reclaim.php'
     	?>
     	<h4><?php _e('Auto Update', 'reclaim')?>: <?php get_option('reclaim_auto_update') ? _e('On', 'reclaim') : _e('Off', 'reclaim'); ?></h4>
 		<div class="table">
@@ -166,7 +178,7 @@ class reclaim_core {
 					?>
 					<tr>
 						<td><input type="checkbox" disabled="disabled"
-						<?php checked($mod['active']); ?> /> <a href="<?php echo $options_page_url; ?>#<?php echo $mod['instance']->shortName(); ?>"><?php _e($mod['instance']->shortName(), 'reclaim'); ?></a>
+						<?php checked($mod['active']); ?> /> <a href="<?php echo self::$options_page_url; ?>#<?php echo $mod['instance']->shortName(); ?>"><?php _e($mod['instance']->shortName(), 'reclaim'); ?></a>
 						</td>
 		
 						<td class="count"><?php echo $mod['instance']->count_items() ?>
@@ -330,3 +342,15 @@ function reclaim_deleteSchedule() {
 register_activation_hook( __FILE__, 'reclaim_createSchedule' );
 register_deactivation_hook( __FILE__, 'reclaim_deleteSchedule' );
 
+
+// workaround: using wp_cron won't save post data containing an <iframe>.
+// this lets us save the instagram embed code, that uses an iframe, with wp_cron.
+// http://wordpress.stackexchange.com/questions/100588/wp-cron-doesnt-save-iframe-or-object-in-post-body
+add_shortcode('embed_code', array('embed_code_shortcode', 'shortcode'));
+class embed_code_shortcode {
+    function shortcode($atts, $content=null) {
+          $post_id = get_the_ID();
+          $content = do_shortcode(get_post_meta($post_id, 'embed_code', true));
+     return $content;
+    }
+}
