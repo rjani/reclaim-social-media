@@ -76,7 +76,7 @@ class fitbit_reclaim_module extends reclaim_module {
 	private static $api_base_url = 'http://api.fitbit.com/1/user/-/';
     
 	// %s for datestring 2013-12-21 
-    private $interval_types = array(
+    private static $interval_types = array(
     	'activities' => 'activities/date/%s.json',
     	'steps'      => 'activities/steps/date/%s/1d/1min.json',
     	'distance'   => 'activities/distance/date/%s/1d/1min.json',
@@ -84,10 +84,10 @@ class fitbit_reclaim_module extends reclaim_module {
     	'sleep'      => 'sleep/date/%s.json'
     );
     
-    private $general_types = array(
-    	'profile'=> 'profile.json',
-    	'device' => 'devices.json',
-    	'badges' => 'badges.json',
+    private static $general_types = array(
+    	'profile'    => 'profile.json',
+    	'device'     => 'devices.json',
+    	'badges'     => 'badges.json',
     	'activities' => 'activities.json'
     );
     
@@ -100,6 +100,14 @@ class fitbit_reclaim_module extends reclaim_module {
 
     public function __construct() {
         $this->shortname = 'fitbit';
+        $this->settings  = get_option('reclaim_fitbit_settings');
+        
+        if (! is_array($settings) ) {
+        	$this->settings = array(
+        		'interval' => array(),
+        		'general'  => array()
+        	);
+        }
     }
 
     public function register_settings() {
@@ -138,13 +146,6 @@ class fitbit_reclaim_module extends reclaim_module {
                 // session_destroy ();
             }
         }
-        $settings = get_option('reclaim_fitbit_settings');
-        if (! is_array($settings) ) {
-        	$settings = array(
-        		'interval' => array(),
-        		'general'  => array()
-        	);
-        }
         
 		// print_r($_SESSION);
 ?>
@@ -164,8 +165,8 @@ class fitbit_reclaim_module extends reclaim_module {
         <tr valign="top">
             <th scope="row"><?php _e('Select FitBit Interval-Types', 'reclaim'); ?></th>
             <td><?php 
-            foreach(array_keys($this->interval_types) as $key) {
-				$checked = (in_array($key, $settings['interval']) ? 'checked="checked"' : '');
+            foreach(array_keys(self::$interval_types) as $key) {
+				$checked = (in_array($key, $this->settings['interval']) ? 'checked="checked"' : '');
 				echo '
     			<label for="chkinterval_'.$key.'">'.ucfirst($key).'</label>
 				<input id="chkinterval_'.$key.'" type="checkbox" name="reclaim_fitbit_settings[interval][]" value="'.$key.'" '.$checked.' /> &nbsp; &nbsp; '; 

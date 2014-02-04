@@ -23,7 +23,7 @@ class foursquare_reclaim_module extends reclaim_module {
 
     private static $timeout = 15;
     private static $limit   = 30;
-	private static $subtract = 120; // To avoid missing results when polling, we subtracting several seconds from the last poll time
+	private static $subtract = 300; // To avoid missing results when polling, we subtracting several seconds from the last poll time
     private static $post_format = 'status'; // or 'status', 'aside'
 	
 // callback-url: http://root.wirres.net/reclaim/wp-content/plugins/reclaim/vendor/hybridauth/hybridauth/src/
