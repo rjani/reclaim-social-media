@@ -102,7 +102,7 @@ class fitbit_reclaim_module extends reclaim_module {
         $this->shortname = 'fitbit';
         $this->settings  = get_option('reclaim_fitbit_settings');
         
-        if (! is_array($settings) ) {
+        if (! is_array($this->settings) ) {
         	$this->settings = array(
         		'interval' => array(),
         		'general'  => array()
@@ -150,13 +150,13 @@ class fitbit_reclaim_module extends reclaim_module {
 		// print_r($_SESSION);
 ?>
         <tr valign="top">
-            <th colspan="2"><a name="<?php echo $this->shortName(); ?>"></a><h3 id=""><?php _e('fitbit', 'reclaim'); ?></h3></th>
+            <th colspan="2"><a name="<?php echo $this->shortName(); ?>"></a><h3 id=""><?php _e('FitBit', 'reclaim'); ?></h3></th>
         </tr>
 <?php
         parent::display_settings($this->shortname);
 ?>
         <tr valign="top">
-            <th scope="row"><?php _e('Fitbit user', 'reclaim'); ?></th>
+            <th scope="row"><?php _e('FitBit user', 'reclaim'); ?></th>
             <td><?php echo get_option('fitbit_user_name'); ?> (ID:<?php echo get_option('fitbit_user_id'); ?>)
             <input type="hidden" name="fitbit_user_id" value="<?php echo get_option('fitbit_user_id'); ?>" />
             <input type="hidden" name="fitbit_user_name" value="<?php echo get_option('fitbit_user_name'); ?>" />
