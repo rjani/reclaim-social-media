@@ -45,9 +45,11 @@ User:       http://api.fitbit.com/1/user/-/profile.json
     "weightUnit": "METRIC"
   }
 }
+Für Gerätedaten und Badges könnte man einen Shortcut erstellen 
 Gerätedaten: http://api.fitbit.com/1/user/-/devices.json
-Übersicht:	 http://api.fitbit.com/1/user/-/activities.json
 Badges: 	 http://api.fitbit.com/1/user/-/badges.json
+Übersicht:	 http://api.fitbit.com/1/user/-/activities.json
+
 
 
 activities/calories
@@ -61,23 +63,37 @@ Beginn: 2013-08-14
 
 http://api.fitbit.com/1/user/-/activities/date/2013-08-14.json
 http://api.fitbit.com/1/user/-/activities/steps/date/2013-08-14/1d/1min.json
-		http://api.fitbit.com/1/user/-/activities/steps/date/2014-01-26/1d/15min.json
+	http://api.fitbit.com/1/user/-/activities/steps/date/2014-01-26/1d/15min.json
 http://api.fitbit.com/1/user/-/activities/distance/date/2013-08-14/1d/1min.json
 http://api.fitbit.com/1/user/-/activities/calories/date/2013-08-14/1d/1min.json
 
 http://api.fitbit.com/1/user/-/sleep/date/2013-12-11.json
 
- */
+*/
 
 
 class fitbit_reclaim_module extends reclaim_module {
-	private static $apiurl_count= "https://api.foursquare.com/v2/users/self/checkins?limit=1&oauth_token=%s&v=20140120";
-	private static $apiurl= "https://api.foursquare.com/v2/users/self/checkins?limit=%s&afterTimestamp=%s&sort=oldestfirst&oauth_token=%s&v=%s";
-
+	private static $api_base_url = 'http://api.fitbit.com/1/user/-/';
+    
+	// %s for datestring 2013-12-21 
+    private $interval_types = array(
+    	'activities' => 'activities/date/%s.json',
+    	'steps'      => 'activities/steps/date/%s/1d/1min.json',
+    	'distance'   => 'activities/distance/date/%s/1d/1min.json',
+    	'calories'   => 'activities/calories/date/%s/1d/1min.json',
+    	'sleep'      => 'sleep/date/%s.json'
+    );
+    
+    private $general_types = array(
+    	'profile'=> 'profile.json',
+    	'device' => 'devices.json',
+    	'badges' => 'badges.json',
+    	'activities' => 'activities.json'
+    );
+    
     private static $timeout = 15;
-    private static $limit   = 30;
-	private static $subtract = 120; // To avoid missing results when polling, we subtracting several seconds from the last poll time
     private static $post_format = 'status'; // or 'status', 'aside'
+    
 	
 // callback-url: http://root.wirres.net/reclaim/wp-content/plugins/reclaim/vendor/hybridauth/hybridauth/src/
 // new app: http://instagram.com/developer/clients/manage/
@@ -94,6 +110,8 @@ class fitbit_reclaim_module extends reclaim_module {
         register_setting('reclaim-social-settings', $this->shortname.'_client_id');
         register_setting('reclaim-social-settings', $this->shortname.'_client_secret');
         register_setting('reclaim-social-settings', $this->shortname.'_access_token');
+        
+        register_setting('reclaim-social-settings', 'reclaim_fitbit_settings');
     }
 
     public function display_settings() {
@@ -106,13 +124,13 @@ class fitbit_reclaim_module extends reclaim_module {
                 echo '<div class="error"><p><strong>Error:</strong> ',esc_html( $error ),'</p></div>';
             }
             else {
-                update_option($this->shortname.'_user_id', $user_profile->encodedId);
+                update_option($this->shortname.'_user_id',   $user_profile->encodedId);
                 update_option($this->shortname.'_user_name', $user_profile->fullName);
                 update_option($this->shortname.'_access_token', $user_access_tokens->access_token);
                 
                 // set last_update
                 $last_update = get_option( 'reclaim_'.$this->shortname.'_last_update' );
-                if($last_update < strtotime($user_profile->memberSince) ) {
+                if( isset($user_profile->memberSince) && $last_update < strtotime($user_profile->memberSince) ) {
                 	update_option('reclaim_'.$this->shortname.'_last_update', strtotime($user_profile->memberSince) );
                 }
             }
@@ -120,6 +138,14 @@ class fitbit_reclaim_module extends reclaim_module {
                 // session_destroy ();
             }
         }
+        $settings = get_option('reclaim_fitbit_settings');
+        if (! is_array($settings) ) {
+        	$settings = array(
+        		'interval' => array(),
+        		'general'  => array()
+        	);
+        }
+        
 		// print_r($_SESSION);
 ?>
         <tr valign="top">
@@ -129,26 +155,32 @@ class fitbit_reclaim_module extends reclaim_module {
         parent::display_settings($this->shortname);
 ?>
         <tr valign="top">
-            <th scope="row"><?php _e('Fitbit user ID', 'reclaim'); ?></th>
-            <td><?php echo get_option('fitbit_user_id'); ?>
+            <th scope="row"><?php _e('Fitbit user', 'reclaim'); ?></th>
+            <td><?php echo get_option('fitbit_user_name'); ?> (ID:<?php echo get_option('fitbit_user_id'); ?>)
             <input type="hidden" name="fitbit_user_id" value="<?php echo get_option('fitbit_user_id'); ?>" />
-            </td>
-        </tr>
-        <tr valign="top">
-            <th scope="row"><?php _e('Fitbit user name', 'reclaim'); ?></th>
-            <td><?php echo get_option('fitbit_user_name'); ?>
             <input type="hidden" name="fitbit_user_name" value="<?php echo get_option('fitbit_user_name'); ?>" />
             </td>
         </tr>
+        <tr valign="top">
+            <th scope="row"><?php _e('Select FitBit Interval-Types', 'reclaim'); ?></th>
+            <td><?php 
+            foreach(array_keys($this->interval_types) as $key) {
+				$checked = (in_array($key, $settings['interval']) ? 'checked="checked"' : '');
+				echo '
+    			<label for="chkinterval_'.$key.'">'.ucfirst($key).'</label>
+				<input id="chkinterval_'.$key.'" type="checkbox" name="reclaim_fitbit_settings[interval][]" value="'.$key.'" '.$checked.' /> &nbsp; &nbsp; '; 
+			}            
+            ?></td>
+        </tr>
 
         <tr valign="top">
-            <th scope="row"><?php _e('fitbit client id', 'reclaim'); ?></th>
-            <td><input type="text" name="fitbit_client_id" value="<?php echo get_option('fitbit_client_id'); ?>" />
+            <th scope="row"><?php _e('FitBit client id', 'reclaim'); ?></th>
+            <td><input type="text" class="widefat" name="fitbit_client_id" value="<?php echo get_option('fitbit_client_id'); ?>" />
             </td>
         </tr>
         <tr valign="top">
-            <th scope="row"><?php _e('fitbit client secret', 'reclaim'); ?></th>
-            <td><input type="text" name="fitbit_client_secret" value="<?php echo get_option('fitbit_client_secret'); ?>" />
+            <th scope="row"><?php _e('FitBit client secret', 'reclaim'); ?></th>
+            <td><input type="text" class="widefat" name="fitbit_client_secret" value="<?php echo get_option('fitbit_client_secret'); ?>" />
             <input type="hidden" name="fitbit_access_token" value="<?php echo get_option('fitbit_access_token'); ?>" />
             <p class="description">Get your FitBit client and credentials <a href="https://dev.fitbit.com/apps/new">here</a>. 
 <?php /*            Use <code><?php echo plugins_url('reclaim/vendor/hybridauth/hybridauth/hybridauth/') ?></code> as "Redirect URI"</p> */ ?>

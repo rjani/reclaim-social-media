@@ -64,7 +64,7 @@ class foursquare_reclaim_module extends reclaim_module {
 		// print_r($_SESSION);
 ?>
         <tr valign="top">
-            <th colspan="2"><a name="<?php echo $this->shortName(); ?>"></a><h3 id=""><?php _e('foursquare', 'reclaim'); ?></h3></th>
+            <th colspan="2"><a name="<?php echo $this->shortName(); ?>"></a><h3 id=""><?php _e('Foursquare', 'reclaim'); ?></h3></th>
         </tr>
 <?php
         parent::display_settings($this->shortname);
@@ -76,20 +76,13 @@ class foursquare_reclaim_module extends reclaim_module {
             </td>
         </tr>
         <tr valign="top">
-            <th scope="row"><?php _e('Foursquare user name', 'reclaim'); ?></th>
-            <td><?php echo get_option('foursquare_user_name'); ?>
-            <input type="hidden" name="foursquare_user_name" value="<?php echo get_option('foursquare_user_name'); ?>" />
-            </td>
-        </tr>
-
-        <tr valign="top">
             <th scope="row"><?php _e('foursquare client id', 'reclaim'); ?></th>
-            <td><input type="text" name="foursquare_client_id" value="<?php echo get_option('foursquare_client_id'); ?>" />
+            <td><input type="text" name="foursquare_client_id" class="widefat" value="<?php echo get_option('foursquare_client_id'); ?>" />
             </td>
         </tr>
         <tr valign="top">
             <th scope="row"><?php _e('foursquare client secret', 'reclaim'); ?></th>
-            <td><input type="text" name="foursquare_client_secret" value="<?php echo get_option('foursquare_client_secret'); ?>" />
+            <td><input type="text" name="foursquare_client_secret" class="widefat" value="<?php echo get_option('foursquare_client_secret'); ?>" />
             <input type="hidden" name="foursquare_access_token" value="<?php echo get_option('foursquare_access_token'); ?>" />
             <p class="description">Get your Foursqaure client and credentials <a href="https://de.foursquare.com/developers/apps">here</a>. Use <code><?php echo plugins_url('reclaim/vendor/hybridauth/hybridauth/hybridauth/') ?></code> as "Redirect URI"</p>
             </td>
@@ -177,7 +170,7 @@ class foursquare_reclaim_module extends reclaim_module {
 						
 						$data = $this->map_data($rawData);
 						parent::insert_posts($data);
-						update_option('reclaim_foursquare_last_update', $lastUpdate);
+						update_option('reclaim_foursquare_last_update', $last_update);
 					}
 				} else {
 					parent::log(sprintf(__('%s returned no data. No import was done', 'reclaim'), $this->shortname));
