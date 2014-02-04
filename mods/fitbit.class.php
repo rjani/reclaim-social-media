@@ -100,7 +100,7 @@ class fitbit_reclaim_module extends reclaim_module {
 
     public function __construct() {
         $this->shortname = 'fitbit';
-        $this->settings  = get_option('reclaim_fitbit_settings');
+        $this->settings  = get_option('fitbit_reclaim_settings');
         
         if (! is_array($this->settings) ) {
         	$this->settings = array(
@@ -119,7 +119,7 @@ class fitbit_reclaim_module extends reclaim_module {
         register_setting('reclaim-social-settings', $this->shortname.'_client_secret');
         register_setting('reclaim-social-settings', $this->shortname.'_access_token');
         
-        register_setting('reclaim-social-settings', 'reclaim_fitbit_settings');
+        register_setting('reclaim-social-settings', 'fitbit_reclaim_settings');
     }
 
     public function display_settings() {
@@ -169,7 +169,7 @@ class fitbit_reclaim_module extends reclaim_module {
 				$checked = (in_array($key, $this->settings['interval']) ? 'checked="checked"' : '');
 				echo '
     			<label for="chkinterval_'.$key.'">'.ucfirst($key).'</label>
-				<input id="chkinterval_'.$key.'" type="checkbox" name="reclaim_fitbit_settings[interval][]" value="'.$key.'" '.$checked.' /> &nbsp; &nbsp; '; 
+				<input id="chkinterval_'.$key.'" type="checkbox" name="fitbit_reclaim_settings[interval][]" value="'.$key.'" '.$checked.' /> &nbsp; &nbsp; '; 
 			}            
             ?></td>
         </tr>
