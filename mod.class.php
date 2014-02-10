@@ -18,6 +18,7 @@
 */
 
 class reclaim_module {
+	private static $force_delete = true;
     protected $shortname;
 
     public function register_settings($modname) {
@@ -32,9 +33,21 @@ class reclaim_module {
             <th scope="row"><?php _e('Active', 'reclaim'); ?></th>
             <td><input type="checkbox" name="<?php echo $modname; ?>_active" value="1" <?php checked(get_option($modname.'_active')); ?> />
                 <?php if (get_option($modname.'_active')) :?>
-                    <em><?php printf(__('last update %s', 'reclaim'), date(get_option('date_format').' '.get_option('time_format'), get_option('reclaim_'.$modname.'_last_update'))); ?></em>
+                    <em><?php printf(__('last update %s', 'reclaim'), date(get_option('date_format').' '.get_option('time_format'), get_option('reclaim_'.$modname.'_last_update'))); ?></em><br/>
                     <input type="submit" class="button button-primary" value="<?php _e('Re-Sync', 'reclaim'); ?>" name="<?php echo $modname; ?>_resync" />
                     <input type="submit" class="button button-primary" value="<?php _e('Reset', 'reclaim'); ?>" name="<?php echo $modname; ?>_reset" />
+                    <?php $count = $this->count_posts(); ?>
+                    <?php if ($count > 0) :?>
+                    	<input type="submit" class="button button-primary" value="<?php _e('Remove '.$count.' Posts', 'reclaim'); ?>" name="<?php echo $modname; ?>_remove_posts" />
+                    <?php endif; ?>
+                    <input type="submit" id="<?php echo $modname; ?>_count_all_items" class="button button-primary" value="<?php _e('Count with ajax', 'reclaim'); ?>" />
+                    <input type="submit" id="<?php echo $modname; ?>_resync_items" class="button button-primary" value="<?php _e('Resync with ajax', 'reclaim'); ?>" />
+                    <span id="<?php echo $modname; ?>_spinner" class="spinner"></span>
+                    
+                    <div id="<?php echo $modname; ?>_notice" class="updated inline" style="display:none">
+						<p><strong class="message"></strong></p>
+                    </div>
+                    
                 <?php endif;?>
             </td>
         </tr>
@@ -88,6 +101,37 @@ class reclaim_module {
     */
     public function reset() {
     	update_option('reclaim_'.$this->shortName().'_last_update', 0);
+    }
+    
+    public function remove_posts() {
+    	$posts = new WP_Query(array(
+    		'posts_per_page' => -1,
+    		'post_type' => 'post',
+    		'meta_query' => array(
+    				array(
+    						'key' => '_post_generator',
+    						'value' => $this->shortName(),
+    						'compare' => 'like'
+    				)
+    		)
+    	));
+    	
+    	foreach ($posts->get_posts() as $post) {
+    		$postid = $post->ID;
+    		self::log($this->shortName().' remove post with id='.$postid);
+    		
+    		$attachments = get_children(array(
+    			'post_type' => 'attachment',
+    			'post_parent' => $postid
+    		));
+    		
+    		foreach ($attachments as $attachment) {
+    			self::log($this->shortName().' remove attachment with id='.$attachment->ID);
+    			wp_delete_attachment($attachment->ID, self::$force_delete);
+    		}
+    		
+    		wp_delete_post($postid, self::$force_delete);
+    	}
     }
 
     /**
@@ -182,7 +226,7 @@ class reclaim_module {
                 if ($ext_image) {
                     if (!is_array($post['ext_image'])) {
                         update_post_meta($inserted_post_id, 'image_url', trim($post['ext_image']));
-                        self::post_image_to_media_library($post['ext_image'], $inserted_post_id, $post['post_title']);
+                        self::post_image_to_media_library($post['ext_image'], $inserted_post_id, $post['post_title'], true, $post['post_date']);
                     }
                     else {
                         //[$i]['link_url']
@@ -190,7 +234,7 @@ class reclaim_module {
                         //[$i]['title']
                         update_post_meta($inserted_post_id, 'image_url', trim($post['ext_image'][0]['image_url']));
                         foreach($post['ext_image'] as $post_image) {
-                            self::post_image_to_media_library(trim($post_image['image_url']), $inserted_post_id, $post_image['title']);
+                            self::post_image_to_media_library(trim($post_image['image_url']), $inserted_post_id, $post_image['title'], true, $post['post_date']);
                         }
                     }
 
@@ -211,7 +255,7 @@ class reclaim_module {
                                 $image_url = isset($image_data['og:image:url']) ? $image_data['og:image:url'] : '';
                                 if ($image_url != "") {
                                     update_post_meta($inserted_post_id, 'image_url', $image_url);
-                                    self::post_image_to_media_library($image_url, $inserted_post_id, $post['post_title']);
+                                    self::post_image_to_media_library($image_url, $inserted_post_id, $post['post_title'], true, $post['post_date']);
                                 }
                             } catch(RuntimeException $e) {
                                 self::log('Remote opengraph-content not parsable:' . $open_graph_content);
@@ -228,7 +272,7 @@ class reclaim_module {
         }
     }
 
-    public static function post_image_to_media_library($source, $post_id, $title, $set_post_thumbnail = true ) {
+    public static function post_image_to_media_library($source, $post_id, $title, $set_post_thumbnail = true, $post_date ) {
     // source http://digitalmemo.neobie.net/grab-save
         $imageurl = $source;
         $imageurl = stripslashes($imageurl);
@@ -251,13 +295,17 @@ class reclaim_module {
         }
 
         try {
-            $headers = get_headers($imageurl, 1);
-            if ( !substr_count($headers["Content-Type"], "image") &&
-                 !substr_count($wp_filetype['type'], "image") ) {
-                self::log( basename($imageurl) . ' is not a valid image: ' . $wp_filetype['type'] . ' - ' . $headers["Content-Type"] );
+            $image_string = self::my_get_remote_content($imageurl, true);
+            $headers = $image_string['headers'];
+            //self::log( 'headers: '.print_r($headers, true) );
+            if ( (!substr_count($headers["content-type"], "image") &&
+                 !substr_count($wp_filetype['type'], "image")) || 
+                 !isset($headers) ) {
+                self::log( basename($imageurl) . ' is not a valid image: ' . $wp_filetype['type'] . ' - ' . $headers["content-type"] );
+                return;
             }
 
-            $image_string = self::my_get_remote_content($imageurl);
+            $image_string = wp_remote_retrieve_body($image_string);
             $fileSaved = file_put_contents($uploads['path'] . "/" . $filename, $image_string);
             if ( !$fileSaved ) {
                 self::log("The file cannot be saved.");
@@ -269,10 +317,15 @@ class reclaim_module {
                 'post_title' => $title,
                 'post_content' => '',
                 'post_status' => 'inherit',
-                'guid' => $uploads['url'] . "/" . $filename
+                'guid' => $uploads['url'] . "/" . $filename,
+				'post_date' => $post_date,
+				// assume that the given post_date is a gmt-date
+				// we need to set this field, because otherwise the attachment
+				// doesnt get the date
+				'post_date_gmt' => $post_date
             );
-            if (!is_array($headers["Content-Type"])) {
-                $attachment['post_mime_type'] = $headers["Content-Type"];
+            if (!is_array($headers["content-type"])) {
+                $attachment['post_mime_type'] = $headers["content-type"];
             }
 
             $attach_id = wp_insert_attachment( $attachment, $fullpathfilename, $post_id );
@@ -291,7 +344,7 @@ class reclaim_module {
         }
     }
 
-    public static function my_get_remote_content($url) {
+    public static function my_get_remote_content($url, $return_full_response = false) {
         $response = wp_remote_get($url,
             array(
                 'headers' => array(
@@ -301,6 +354,10 @@ class reclaim_module {
         );
         if( is_wp_error( $response ) ) {
             self::log('Error fetching remote content from '.$url.', wp error: '.$response->get_error_message());
+            return "";
+        } 
+        if ($return_full_response) {
+            return $response;
         } else {
             $data = wp_remote_retrieve_body($response);
             return $data;
@@ -310,4 +367,79 @@ class reclaim_module {
     public static function log($message) {
         file_put_contents(RECLAIM_PLUGIN_PATH.'/reclaim-log.txt', '['.date('c').']: '.$message."\n", FILE_APPEND);
     }
+    
+    public function add_admin_ajax_handlers() {
+		add_action( 'wp_ajax_'.$this->shortName().'_count_all_items', array($this, 'ajax_count_all_items'));
+		add_action( 'wp_ajax_'.$this->shortName().'_count_items', array($this, 'ajax_count_items'));
+		add_action( 'wp_ajax_'.$this->shortName().'_resync_items', array($this, 'ajax_resync_items'));
+		// todo: add actions for resync, remove posts
+		// this way it may be possible to do page-based
+		// imports which do not stretch memory and execution times
+		
+		add_action( 'admin_print_footer_scripts', array($this, 'print_scripts'));
+	}
+	
+	public function ajax_count_all_items() {
+		echo (json_encode(array(
+			'success' => true,
+			'result' => $this->count_items().' '
+            	.translate('items available', 'reclaim')
+            	.', '.$this->count_posts().' '
+            	.translate('posts created', 'reclaim')
+		)));
+		
+		die();
+	}
+	
+	public function ajax_count_items() {
+		$count = $this->count_items();
+		
+		echo(json_encode(array(
+			'success' => true,
+			'result' => $count
+		)));
+		die();
+	}
+	
+	public function ajax_resync_items() {
+		$offset = intval( $_POST['offset'] );
+		$limit = intval( $_POST['limit'] );
+		$count = intval( $_POST['count'] );
+		
+		self::log($this->shortName().' resync '.$offset.'-'.($offset + $limit).':'.$count);
+		
+		echo(json_encode(array(
+			'success' => false,
+			'error' => 'ajax-resync is not implemented'
+		)));
+		
+		die();
+	}
+	
+	public function print_scripts() {
+		?>
+		<script type="text/javascript" >
+		jQuery(document).ready(function($) {
+			var modname = '<?php echo($this->shortName()); ?>';
+
+			
+			$('#'+modname+'_count_all_items').click(function(eventObject) {
+				var r = reclaim.getInstance(modname, eventObject);
+
+				r.count_all_items();
+				
+				return false;
+			});
+
+			$('#'+modname+'_resync_items').click(function(eventObject) {
+				var r = reclaim.getInstance(modname, eventObject);
+
+				r.resync_items();
+				
+				return false;
+			});
+		});
+		</script>
+		<?php		
+	}
 }

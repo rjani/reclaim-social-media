@@ -36,6 +36,7 @@ if (file_exists( __DIR__ . '/vendor/autoload.php')) {
 
 define('RECLAIM_UPDATE_INTERVAL', 10*60);
 define('RECLAIM_PLUGIN_PATH', dirname( __FILE__));
+define('RECLAIM_PLUGIN_URL', plugins_url('', __FILE__));
 
 class reclaim_core {
     private $mods_loaded = array();
@@ -72,9 +73,16 @@ class reclaim_core {
             		if (wp_redirect(self::$options_page_url.'#'.$mod['name'])) {
 	                	exit;
 	                }
+            	} else if (isset($_REQUEST[$mod['name'].'_remove_posts'])) {
+            		$this->removePostsMod($mod);
+            		if (wp_redirect(self::$options_page_url.'#'.$mod['name'])) {
+	                	exit;
+	                }
             	}
             }
         }
+        
+        $this->add_admin_ajax_handlers();
 
         add_action('admin_menu', array($this, 'admin_menu'));
         add_action('admin_enqueue_scripts', array($this, 'admin_stylesheets'));
@@ -123,6 +131,12 @@ class reclaim_core {
     		$mod['instance']->reset();
     	}
     }
+    
+    public function removePostsMod(&$mod) {
+    	if ($mod['active']) {
+    		$mod['instance']->remove_posts();
+    	}
+    }
 
     public function myStartSession() {
         if (!session_id()) {
@@ -139,10 +153,12 @@ class reclaim_core {
     public function prefix_add_reclaim_stylesheet() {
         wp_register_style('prefix-style', plugins_url('css/style.css', __FILE__));
         wp_enqueue_style('prefix-style');
-        wp_register_style('leaflet', 'http://cdn.leafletjs.com/leaflet-0.7.2/leaflet.css');
-        wp_enqueue_style('leaflet');
-        wp_enqueue_script( 'leaflet', 'http://cdn.leafletjs.com/leaflet-0.7.2/leaflet.js' );
-        wp_enqueue_script( 'stamen', 'http://maps.stamen.com/js/tile.stamen.js?v1.2.4' );
+        if (get_option('reclaim_show_map') == '1') {
+	        wp_register_style('leaflet', 'http://cdn.leafletjs.com/leaflet-0.7.2/leaflet.css');
+	        wp_enqueue_style('leaflet');
+	        wp_enqueue_script( 'leaflet', 'http://cdn.leafletjs.com/leaflet-0.7.2/leaflet.js' );
+	        wp_enqueue_script( 'stamen', 'http://maps.stamen.com/js/tile.stamen.js?v1.2.4' );
+        }
 //        wp_enqueue_script( 'twitter-widget', 'https://platform.twitter.com/widgets.js' );
 //        wp_enqueue_script( 'google-plus-widget', 'https://apis.google.com/js/plusone.js' );
 //        wp_enqueue_script( 'facebook-jssdk', 'https://connect.facebook.net/de_DE/all.js#xfbml=1' );
@@ -150,6 +166,8 @@ class reclaim_core {
     }
     
     public function admin_stylesheets() {
+    	wp_register_script('admin-reclaim-script', plugins_url('js/admin_ajax.js', __FILE__), array('jquery'));
+    	wp_enqueue_script('admin-reclaim-script');
     	wp_register_style('admin-reclaim-style', plugins_url('css/style_admin.css', __FILE__));
     	wp_enqueue_style('admin-reclaim-style');
     }
@@ -214,6 +232,7 @@ class reclaim_core {
     public function register_settings() {
         register_setting('reclaim-social-settings', 'reclaim_update_interval');
         register_setting('reclaim-social-settings', 'reclaim_auto_update');
+        register_setting('reclaim-social-settings', 'reclaim_show_map');
         foreach($this->mods_loaded as $mod) {
             $mod['instance']->register_settings();
         }
@@ -222,6 +241,11 @@ class reclaim_core {
     public function display_settings() {
 ?>
     <div class="wrap">
+<?php
+        foreach($this->mods_loaded as $mod) {
+           echo '<a href="#'.$mod['name'].'">'.$mod['name'].'</a> | ';
+        }
+?>
         <div id="icon-options-general" class="icon32"></div>
         <h2><?php _e('Reclaim Social Accounts Settings', 'reclaim'); ?></h2>
         <form action="options.php" method="post">
@@ -237,6 +261,10 @@ class reclaim_core {
             <tr valign="top">
                 <th scope="row"><?php _e('Update Interval (in seconds)', 'reclaim'); ?></th>
                 <td><input type="text" name="reclaim_update_interval" value="<?php echo self::get_interval(); ?>" /></td>
+            </tr>
+             <tr valign="top">
+                <th scope="row"><?php _e('Show integrated map', 'reclaim'); ?></th>
+                <td><input type="checkbox" name="reclaim_show_map" value="1" <?php checked(get_option('reclaim_show_map')); ?> /></td>
             </tr>
 <?php
         foreach($this->mods_loaded as $mod) {
@@ -289,7 +317,7 @@ class reclaim_core {
             //!is_category()
 
         // Show map, if geo data present
-        if (get_post_meta($post->ID, 'geo_latitude', true) && get_post_meta($post->ID, 'geo_longitude', true)) {
+        if (get_option('reclaim_show_map') == '1' && get_post_meta($post->ID, 'geo_latitude', true) && get_post_meta($post->ID, 'geo_longitude', true)) {
 
             $map = '<div class="clearfix leaflet-map" id="map-'.$post->ID.'" style=""></div>'
                 .'<script type="text/javascript">var layer = new L.StamenTileLayer("toner-lite");'
@@ -315,6 +343,16 @@ class reclaim_core {
             in_array('the_excerpt', $GLOBALS['wp_current_filter']) ||
             in_array('get_the_excerpt', $GLOBALS['wp_current_filter']);
     }
+    
+    public function add_admin_ajax_handlers() {
+		if (is_admin()) {
+			foreach($this->mods_loaded as $mod) {
+				if ($mod['active']) {
+					$mod['instance']->add_admin_ajax_handlers();
+				}
+			}
+		}
+	}
 }
 
 add_action('init', 'reclaim_init');
