@@ -364,3 +364,4 @@ class instagram_reclaim_module extends reclaim_module {
         return $content;
     }
 }
+
