@@ -126,7 +126,7 @@ class dropbox_reclaim_module extends reclaim_module {
 	                'ext_guid' => $guid,
     	            'post_meta' => $post_meta
         	    );
-				parent::log(sprintf(__('%s posted new status: %s on %s', 'reclaim'), $this->shortname, $title, $data[count($data)-1]["post_date"]));
+				parent::log(sprintf(__('%s posted new status: %s on %s with guid %s', 'reclaim'), $this->shortname, $title, $data[count($data)-1]["post_date"], $guid));
 			}
         }
         
