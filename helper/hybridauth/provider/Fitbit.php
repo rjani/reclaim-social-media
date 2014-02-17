@@ -17,8 +17,7 @@ class Hybrid_Providers_Fitbit extends Hybrid_Provider_Model_OAuth1
 	*/
 	function initialize() 
 	{
-		parent::initialize();
-/*
+
 		// 1 - check application credentials
 		if ( ! $this->config["keys"]["key"] || ! $this->config["keys"]["secret"] ){
 			throw new Exception( "Your application key and secret are required in order to connect to {$this->providerId}.", 4 );
@@ -54,7 +53,7 @@ class Hybrid_Providers_Fitbit extends Hybrid_Provider_Model_OAuth1
 		if( isset( Hybrid_Auth::$config["proxy"] ) ){
 			$this->api->curl_proxy = Hybrid_Auth::$config["proxy"];
 		}
-*/
+
 		
 		$this->api->api_base_url      = "https://api.fitbit.com/1/user/-/";
 		$this->api->authorize_url     = "https://api.fitbit.com/oauth/authorize";
