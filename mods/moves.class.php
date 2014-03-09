@@ -34,6 +34,8 @@ class moves_reclaim_module extends reclaim_module {
 
     public function __construct() {
         $this->shortname = 'moves';
+        $this->has_ajaxsync = true;
+
         add_filter('the_content', array($this, 'moves_content'), 100);
         add_action('wp_enqueue_scripts', array($this, 'moves_add_reclaim_stylesheet'));
         add_action('wp_head', array($this, 'add_moves_styles'));
@@ -68,11 +70,9 @@ class moves_reclaim_module extends reclaim_module {
             }
         }
 ?>
-        <tr valign="top">
-            <th colspan="2"><a name="<?php echo $this->shortName(); ?>"></a><h3><?php _e('moves', 'reclaim'); ?></h3></th>
-        </tr>
 <?php
-        parent::display_settings($this->shortname);
+        $displayname = __('moves', 'reclaim');
+        parent::display_settings($this->shortname, $displayname);
 ?>
          <tr valign="top">
             <th scope="row"><?php _e('Show moves diagram', 'reclaim'); ?></th>
@@ -88,7 +88,11 @@ class moves_reclaim_module extends reclaim_module {
             <td><input type="text" name="moves_client_secret" value="<?php echo get_option('moves_client_secret'); ?>" />
             <input type="hidden" name="moves_user_id" value="<?php echo get_option('moves_user_id'); ?>" />
             <input type="hidden" name="moves_access_token" value="<?php echo get_option('moves_access_token'); ?>" />
-            <p class="description">Get your Moves client and credentials <a href="https://dev.moves-app.com/apps">here</a>. Use <code><?php echo plugins_url('reclaim/vendor/hybridauth/hybridauth/hybridauth/') ?></code> as "Redirect URI"</p>
+            <p class="description">
+            <?php 
+            echo sprintf(__('Get your Moves client and credentials <a href="%s">here</a>. ','reclaim'),'https://dev.moves-app.com/apps');  
+            echo sprintf(__('Use <code>%s</code> as "Redirect URI"','reclaim'),plugins_url('reclaim/vendor/hybridauth/hybridauth/hybridauth/')); ?>
+            </p>
             </td>
         </tr>
 
@@ -228,7 +232,7 @@ class moves_reclaim_module extends reclaim_module {
      * @param array $rawData
      * @return array
      */
-    private function map_data(array $rawData) {
+    private function map_data(array $rawData, $type="posts") {
         $data = array();
         foreach($rawData as $day){
             if ($this->check_for_import($day) && intval(date("H")) > 2) {
@@ -236,16 +240,17 @@ class moves_reclaim_module extends reclaim_module {
                 $image_url = '';
                 $tags = '';
                 $link = '';
-                $title = sprintf(__('Activity on %s', 'reclaim'), date(get_option('date_format'), strtotime($day["date"])));
+                $title = sprintf(__('Activity on %s', 'reclaim'), date_i18n(get_option('date_format'), strtotime($day["date"])));
 
                 $post_meta['moves_api_data'] = json_encode($day);
                 $activity_grouped = $this->construct_activity_group_array($day);
-                $post_meta['moves_group_data'] = json_encode($activity_grouped['data2']);
-                $post_meta['moves_group_data1'] = json_encode($activity_grouped['data1']);
+                $post_meta['moves_group_data'] = $activity_grouped['data2'];
+                $post_meta['moves_group_data1'] = $activity_grouped['data1'];
                 $content = $this->construct_content($activity_grouped['data1']);
 
                 $post_meta["_".$this->shortname."_link_id"] = $entry["id"];
                 $post_meta["_post_generator"] = $this->shortname;
+                $post_meta["_reclaim_post_type"] = $type;
 
                 $data[] = array(
                     'post_author' => get_option($this->shortname.'_author'),
@@ -266,7 +271,6 @@ class moves_reclaim_module extends reclaim_module {
         }
         return $data;
     }
-    
 
     public function count_items() {
 		if (get_option('moves_user_id') && get_option('moves_access_token') ) {
@@ -551,7 +555,7 @@ class moves_reclaim_module extends reclaim_module {
     var minimumBubbleSize = 10;
     var labelsWithinBubbles = true;
     var title = "";
-    var dataset = '.get_post_meta($post->ID, 'moves_group_data', true).';
+    var dataset = '.json_encode(get_post_meta($post->ID, 'moves_group_data', true)).';
     var gapBetweenBubbles = 15;
     var xPadding = 20;
     var yPadding = 100;

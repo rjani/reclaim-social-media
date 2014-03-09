@@ -15,10 +15,13 @@ display: block;
 {
 	display: none;
 }
+
 .list-view .site-content .format-video .post-thumbnail,
 .list-view .site-content .format-image .post-thumbnail,
+.list-view .site-content .format-audio .post-thumbnail,
 article.format-video div.entry-media,
 article.format-image div.entry-media,
+article.format-audio div.entry-media,
 article.format-video .wp-post-image
 {
 	display: none;
@@ -47,7 +50,8 @@ height: 120px;
 display: block;
 }
 .list-view .site-content .format-video .post-thumbnail,
-.list-view .site-content .format-image .post-thumbnail 
+.list-view .site-content .format-image .post-thumbnail,
+.list-view .site-content .format-audio .post-thumbnail
 {
 display: block;
 }
@@ -118,6 +122,11 @@ div.entry-content p.viewpost-google,
 div.entry-content p.viewpost-facebook,
 div.entry-content p.viewpost-flickr,
 div.entry-content p.viewpost-instagram,
+div.entry-content p.viewpost-soundcloud,
+div.entry-content p.viewpost-yelp,
+div.entry-content p.viewpost-moves,
+div.entry-content p.viewpost-tumblr,
+div.entry-content p.viewpost-twitpic,
 div.entry-content p.viewpost-bookmarks 
 {
 float: right;

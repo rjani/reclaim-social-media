@@ -29,6 +29,7 @@ class foursquare_reclaim_module extends reclaim_module {
 
     public function __construct() {
         $this->shortname = 'foursquare';
+        $this->has_ajaxsync = true;
     }
 
     public function register_settings() {
@@ -59,11 +60,9 @@ class foursquare_reclaim_module extends reclaim_module {
             }
         }
 ?>
-        <tr valign="top">
-            <th colspan="2"><a name="<?php echo $this->shortName(); ?>"></a><h3 id=""><?php _e('foursquare', 'reclaim'); ?></h3></th>
-        </tr>
 <?php
-        parent::display_settings($this->shortname);
+        $displayname = __('foursquare', 'reclaim');
+        parent::display_settings($this->shortname, $displayname);
 ?>
         <tr valign="top">
             <th scope="row"><?php _e('foursquare client id', 'reclaim'); ?></th>
@@ -75,8 +74,11 @@ class foursquare_reclaim_module extends reclaim_module {
             <td><input type="text" name="foursquare_client_secret" value="<?php echo get_option('foursquare_client_secret'); ?>" />
             <input type="hidden" name="foursquare_user_id" value="<?php echo get_option('foursquare_user_id'); ?>" />
             <input type="hidden" name="foursquare_access_token" value="<?php echo get_option('foursquare_access_token'); ?>" />
-            <p class="description">Get your Foursqaure client and credentials <a href="https://de.foursquare.com/developers/apps">here</a>. Use <code><?php echo plugins_url('reclaim/vendor/hybridauth/hybridauth/hybridauth/') ?></code> as "Redirect URI"</p>
-            </td>
+           <?php
+            echo sprintf(__('Get your Foursquare client and credentials <a href="%s">here</a>. ','reclaim'),'https://foursquare.com/developers/apps/');
+            echo sprintf(__('Use <code>%s</code> as "Redirect URI"','reclaim'),plugins_url('reclaim/vendor/hybridauth/hybridauth/hybridauth/'));
+            ?>
+           </td>
         </tr>
 
         <tr valign="top">
@@ -193,7 +195,7 @@ class foursquare_reclaim_module extends reclaim_module {
      * @param array $rawData
      * @return array
      */
-    private function map_data(array $rawData) {
+    private function map_data(array $rawData, $type="posts") {
         $data = array();
         foreach($rawData['response']['checkins']['items'] as $checkin){
 
@@ -229,7 +231,8 @@ class foursquare_reclaim_module extends reclaim_module {
 
                 $post_meta["_".$this->shortname."_link_id"] = $entry["id"];
                 $post_meta["_post_generator"] = $this->shortname;
-                
+                $post_meta["_reclaim_post_type"] = $type;
+
                 $post_date = date('Y-m-d H:i:s', $checkin["createdAt"] + ($checkin['timeZoneOffset'] * 60 ) - get_option( 'gmt_offset' ) * 3600);
                 $post_date_gmt = date('Y-m-d H:i:s', $checkin["createdAt"]);
                 

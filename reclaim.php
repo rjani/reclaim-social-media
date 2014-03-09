@@ -40,6 +40,7 @@ define('RECLAIM_PLUGIN_URL', plugins_url('', __FILE__));
 
 class reclaim_core {
     private $mods_loaded = array();
+    private $active_mod_name_list = array();
     private static $instance = 0;
     private static $options_page_url = 'options-general.php?page=reclaim/reclaim.php';
 
@@ -59,7 +60,9 @@ class reclaim_core {
             $this->mods_loaded[] = array('name' => $name,
                                          'active' => get_option($name.'_active'),
                                          'instance' => new $cName);
+            if (get_option($name.'_active')) { $this->active_mod_name_list[] = $name;}
         }
+        update_option('reclaim_active_mod_name_list', $this->active_mod_name_list);
 
         foreach ($this->mods_loaded as $mod) {
             if (is_admin()) {
@@ -91,16 +94,25 @@ class reclaim_core {
         //dashboard widget
         add_action('wp_dashboard_setup', array($this, 'add_dashboard_widgets') );
         
-        // get those sessions strated, before it's too late
+        // get those sessions started, before it's too late
         // don't know if this works properly
         add_action('wp_logout', array($this, 'myEndSession'), 1, 2);
         add_action('wp_login', array($this, 'myEndSession'), 1, 3);
 
-        add_filter('post_link', array($this, 'original_permalink'), 1, 4);
-        add_filter('post_type_link', array($this, 'original_permalink'), 1, 5);
+		if (get_option('reclaim_link_original')) {
+		// to do: differentiate between mods and post types
+		// i.e. link formats could always link to source, mods
+		// only if user wants to
+            add_filter('post_link', array($this, 'original_permalink'), 1, 4);
+            add_filter('post_type_link', array($this, 'original_permalink'), 1, 5);
+        }
         add_filter('the_content', array($this, 'reclaim_content'), 100);
 
         add_action('reclaim_update_hook', array($this, 'updateMods'));
+    }
+
+    public function modNameList() {
+        return get_option('reclaim_active_mod_name_list');
     }
 
     public static function instance() {
@@ -168,8 +180,25 @@ class reclaim_core {
     public function admin_stylesheets() {
     	wp_register_script('admin-reclaim-script', plugins_url('js/admin_ajax.js', __FILE__), array('jquery'));
     	wp_enqueue_script('admin-reclaim-script');
+    	wp_localize_script('admin-reclaim-script', 'admin_reclaim_script_translation', self::localize_admin_reclaim_script());
     	wp_register_style('admin-reclaim-style', plugins_url('css/style_admin.css', __FILE__));
     	wp_enqueue_style('admin-reclaim-style');
+    }
+    
+    public function localize_admin_reclaim_script() {
+        return array(
+            'Cancel' => __('Cancel ', 'reclaim'),
+            'Canceled' => __('Canceled.', 'reclaim'),
+            'Whoops_Returned_data_must_be_not_null' => __('Whoops! Returned data must be not null.', 'reclaim'),
+            'Error_occured' => __('Error occured: ', 'reclaim'),
+            'Count_items_and_posts' => __('Count items and posts...', 'reclaim'),
+            'Count_items' => __('Count items...', 'reclaim'),
+            'item_count_is_not_a_valid_number' => __('item count is not a valid number. value=', 'reclaim'),
+            'Not_a_valid_item_count' => __('Not a valid item count: ', 'reclaim'),
+            'Resyncing_items' => __('Resyncing items: ', 'reclaim'),
+            'result_offset_is_not_a_number' => __('result.offset is not a number: value=', 'reclaim'),
+            'items_resynced_duration' => __(' items resynced, duration: ', 'reclaim'),
+        );
     }
     
     public function add_dashboard_widgets() {
@@ -199,9 +228,12 @@ class reclaim_core {
 						<?php checked($mod['active']); ?> /> <a href="<?php echo self::$options_page_url; ?>#<?php echo $mod['instance']->shortName(); ?>"><?php _e($mod['instance']->shortName(), 'reclaim'); ?></a>
 						</td>
 		
-						<td class="count"><?php echo $mod['instance']->count_items() ?>
+						<td class="count"><?php echo $mod['instance']->count_items(); ?>
 						</td>
-						<td class="count"><?php echo $mod['instance']->count_posts() ?>
+						<td class="count"><?php 
+						//echo $mod['instance']->count_posts("posts"); 
+						echo $mod['instance']->count_posts(); 
+						?>
 						</td>
 					</tr>
 					<?php 
@@ -232,7 +264,9 @@ class reclaim_core {
     public function register_settings() {
         register_setting('reclaim-social-settings', 'reclaim_update_interval');
         register_setting('reclaim-social-settings', 'reclaim_auto_update');
+        register_setting('reclaim-social-settings', 'reclaim_link_original');
         register_setting('reclaim-social-settings', 'reclaim_show_map');
+        register_setting('reclaim-social-settings', 'reclaim_active_mod_name_list');
         foreach($this->mods_loaded as $mod) {
             $mod['instance']->register_settings();
         }
@@ -255,19 +289,24 @@ class reclaim_core {
                 <th colspan="2"><h3><?php _e('General Settings', 'reclaim'); ?></h3></th>
             </tr>
             <tr valign="top">
-                <th scope="row"><?php _e('Auto-update', 'reclaim'); ?></th>
+                <th scope="row"><label for="reclaim_auto_update"><?php _e('Auto-update', 'reclaim'); ?></label></th>
                 <td><input type="checkbox" name="reclaim_auto_update" value="1" <?php checked(get_option('reclaim_auto_update')); ?> /></td>
             </tr>
             <tr valign="top">
-                <th scope="row"><?php _e('Update Interval (in seconds)', 'reclaim'); ?></th>
+                <th scope="row"><label for="reclaim_update_interval"><?php _e('Update Interval (in seconds)', 'reclaim'); ?></label></th>
                 <td><input type="text" name="reclaim_update_interval" value="<?php echo self::get_interval(); ?>" /></td>
             </tr>
-             <tr valign="top">
-                <th scope="row"><?php _e('Show integrated map', 'reclaim'); ?></th>
+            <tr valign="top">
+                <th scope="row"><label for="reclaim_link_original"><?php _e('Link to original content', 'reclaim'); ?></label></th>
+                <td><input type="checkbox" name="reclaim_link_original" value="1" <?php checked(get_option('reclaim_link_original')); ?> /></td>
+            </tr>
+            <tr valign="top">
+                <th scope="row"><label for="reclaim_show_map"><?php _e('Show integrated map', 'reclaim'); ?></label></th>
                 <td><input type="checkbox" name="reclaim_show_map" value="1" <?php checked(get_option('reclaim_show_map')); ?> /></td>
             </tr>
 <?php
         foreach($this->mods_loaded as $mod) {
+            echo '<tr id="'.$mod['name'].'"><th colspan="2"><hr /></th></tr>';
             $mod['instance']->display_settings();
         }
 ?>
@@ -278,6 +317,7 @@ class reclaim_core {
 <?php
     }
 
+    // also see function syndication_permalink in feedwordpress/feedwordpress.php
     public function original_permalink($permalink = '', $post = null, $leavename = false, $sample = false) {
         global $id;
 

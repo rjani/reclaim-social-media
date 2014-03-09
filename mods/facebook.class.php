@@ -19,11 +19,13 @@
 
 class facebook_reclaim_module extends reclaim_module {
     private static $apiurl= "https://graph.facebook.com/%s/feed/?limit=%s&locale=%s&access_token=%s";
-    private static $count = 400;
+    private static $count = 40;
+    private static $max_import_loops = 1;
     private static $timeout = 60;
 
     public function __construct() {
         $this->shortname = 'facebook';
+        $this->has_ajaxsync = true;
     }
 
     public function register_settings() {
@@ -37,23 +39,19 @@ class facebook_reclaim_module extends reclaim_module {
     }
 
     public function display_settings() {
-        if ( isset( $_GET['link']) && (strtolower($_GET['mod'])=='facebook') ) {
+        if ( isset( $_GET['link']) && (strtolower($_GET['mod'])=='facebook') && (isset($_SESSION['login'])) ) {
             $user_profile       = json_decode($_SESSION['hybridauth_user_profile']);
             $user_access_tokens = json_decode($_SESSION['hybridauth_user_access_tokens']);
             $login              = $_SESSION['login'];
             $error              = $_SESSION['e'];
 
             if ($error!="") {
-                echo '<div class="error"><p><strong>Error:</strong> ',esc_html( $error ),'</p></div>';
-                //echo '<div class="error"><p><strong>Error:</strong> ',esc_html( $e ),'</p></div>';
+                echo '<div class="error"><p>'.esc_html( $error ).'</p></div>';
             }
             else {
                 update_option('facebook_user_id', $user_profile->identifier);
                 update_option('facebook_username', $user_profile->displayName);
                 update_option('facebook_oauth_token', $user_access_tokens->access_token);
-                if (session_id()) {
-                    //session_destroy ();
-                }
             }
 
             if ( $login == 0 ) {
@@ -66,35 +64,37 @@ class facebook_reclaim_module extends reclaim_module {
 //            echo "<pre>" . print_r( $user_profile, true ) . "</pre>" ;
 //            echo $user_access_token->accessToken;
 //            $user_profile->displayName
+            if(session_id()) {
+                session_destroy ();
+            }
         }
 
 ?>
-        <tr valign="top">
-            <th colspan="2"><a name="<?php echo $this->shortName(); ?>"></a><h3><?php _e('Facebook', 'reclaim'); ?></h3></th>
-        </tr>
 <?php
-        parent::display_settings($this->shortname);
+        $displayname = __('Facebook', 'reclaim');
+        parent::display_settings($this->shortname, $displayname);
 ?>
         <tr valign="top">
             <th scope="row"><?php _e('Facebook user ID', 'reclaim'); ?></th>
-            <td><?php echo get_option('facebook_user_id'); ?>
-            <input type="hidden" name="facebook_user_id" value="<?php echo get_option('facebook_user_id'); ?>" />
+            <td><?php //echo get_option('facebook_user_id'); ?>
+            <input type="text" name="facebook_user_id" value="<?php echo get_option('facebook_user_id'); ?>" />
             </td>
         </tr>
         <tr valign="top">
             <th scope="row"><?php _e('Facebook user name', 'reclaim'); ?></th>
-            <td><?php echo get_option('facebook_username'); ?>
-            <input type="hidden" name="facebook_username" value="<?php echo get_option('facebook_username'); ?>" />
+            <td><?php //echo get_option('facebook_username'); ?>
+            <input type="text" name="facebook_username" value="<?php echo get_option('facebook_username'); ?>" />
             </td>
         </tr>
         <tr valign="top">
-            <th scope="row"><?php _e('Facebook app id', 'reclaim'); ?></th>
+            <th scope="row"><label for="facebook_app_id"><?php _e('Facebook app id', 'reclaim'); ?></label></th>
             <td><input type="text" name="facebook_app_id" value="<?php echo get_option('facebook_app_id'); ?>" /></td>
         </tr>
         <tr valign="top">
-            <th scope="row"><?php _e('Facebook app secret', 'reclaim'); ?></th>
+            <th scope="row"><label for="facebook_app_secret"><?php _e('Facebook app secret', 'reclaim'); ?></label></th>
             <td><input type="text" name="facebook_app_secret" value="<?php echo get_option('facebook_app_secret'); ?>" />
             <input type="hidden" name="facebook_oauth_token" value="<?php echo get_option('facebook_oauth_token'); ?>" />
+            <p class="description"><?php echo sprintf(__('Some help on how to get the keys and secrets <a href="%s">here</a>.','reclaim'), 'https://github.com/espresto/reclaim-social-media/wiki/Get-App-Credentials-for-Facebook'); ?></p>
             </td>
         </tr>
         <tr valign="top">
@@ -176,7 +176,6 @@ class facebook_reclaim_module extends reclaim_module {
             $errors = 0;
             $i = 0;
             while (strlen($urlNext) > 0) {
-                parent::log(sprintf(__('GETTING for %s from %s', 'reclaim'), $this->shortname, $urlNext));
                 $rawData = parent::import_via_curl($urlNext, self::$timeout);
                 if ($rawData) {
                     $errors = 0;
@@ -191,8 +190,11 @@ class facebook_reclaim_module extends reclaim_module {
                     $data = self::map_data($rawData);
                     parent::insert_posts($data);
 
-                    if ( !$forceResync && count($data) > 0 &&
-                         intval($rawData['data'][count($rawData['data'])-1]["created_time"]) < intval($lastupdate) ) {
+                    if (
+                        !$forceResync && count($data) > 0
+                        && intval($rawData['data'][count($rawData['data'])-1]["created_time"]) < intval($lastupdate)
+                        || $i > self::$max_import_loops
+                        ) {
                         // abort requests if we've already seen these events
                         $urlNext = "";
                     }
@@ -213,34 +215,105 @@ class facebook_reclaim_module extends reclaim_module {
         else parent::log(sprintf(__('%s user data missing. No import was done', 'reclaim'), $this->shortname));
     }
 
-    private function map_data($rawData) {
+    // called from ajax sync, calls import_tweet()
+    public function ajax_resync_items() {
+        $type = isset($_POST['type']) ? $_POST['type'] : 'posts';
+    	$offset = intval( $_POST['offset'] );
+    	$limit = intval( $_POST['limit'] );
+    	$count = intval( $_POST['count'] );
+    	$next_url = isset($_POST['next_url']) ? $_POST['next_url'] : null;
+    
+        self::log($this->shortName().' ' . $type . ' resync '.$offset.'-'.($offset + $limit).':'.$count);
+    	
+    	$return = array(
+    		'success' => false,
+    		'error' => '',
+			'result' => null
+    	);
+    	
+        if (get_option('facebook_username') && get_option('facebook_user_id') &&  get_option('facebook_oauth_token')) {
+            if ($next_url != '') {
+                $rawData = parent::import_via_curl($next_url, self::$timeout);
+            } else {
+                $rawData = parent::import_via_curl(sprintf(self::$apiurl, get_option('facebook_user_id'), self::$count, substr(get_bloginfo('language'), 0, 2), get_option('facebook_oauth_token')), self::$timeout);
+            }
+
+            $rawData = json_decode($rawData, true);
+            if (!($rawData['error']['code'])) {
+                $data = self::map_data($rawData, $type);
+                parent::insert_posts($data);
+                update_option('reclaim_'.$this->shortname.'_'.$type.'_last_update', current_time('timestamp'));
+
+                if (!isset($rawData['paging']['next'])) { 
+                    //$return['error'] = sprintf(__('%s %s import done.', 'reclaim'), $type, $this->shortname); 
+                    $return['result'] = array(
+                        // when we're done, tell ajax script the number of imported items
+                        // and that we're done (offset == count)
+                        'offset' => $offset + sizeof($data),
+                        'count' => $offset + sizeof($data),
+                        'next_url' => null,
+                    );
+                } else {
+                    $return['result'] = array(
+                        'offset' => $offset + sizeof($data),
+                        // take the next pagination url instead of calculating
+                        // a self one
+                        'next_url' => $rawData['paging']['next'],
+                    );
+                }
+                $return['success'] = true;
+            }
+            elseif (isset($rawdata['error']['code']) != 200) {
+                $return['error'] = $rawData['error']['message'] . " (Error code " . $rawData['error']['code'] . ")";
+            }
+            else $return['error'] = sprintf(__('%s returned no data. No import was done', 'reclaim'), $this->shortname);
+        }
+        else $return['error'] = sprintf(__('%s %s user data missing. No import was done', 'reclaim'), $this->shortname, $type);
+
+    	echo(json_encode($return));
+    	 
+    	die();
+    }
+
+
+    public function count_items() {
+    	return 999999;
+    }
+    private function filter_item($entry) {
+        /*
+        * filtering
+        * we don't want tweets, or ifft-stuff, cause that would
+        * duplicate the other feeds (or would it not?)
+        */
+        if ( 
+                    (
+                    $entry['application']['name'] != "Twitter" // no tweets
+                    && $entry['application']['namespace'] != "rssgraffiti" // no blog stuff
+                    && $entry['application']['namespace'] != "NetworkedBlogs" // no  NetworkedBlogs syndication
+                    && $entry['application']['namespace'] != "ifthisthenthat" // no instagrams and ifttt
+                    && $entry['application']['namespace'] != "friendfeed" // no friendfeed
+                    )
+               && ( $entry['status_type'] != "approved_friend" ) // no new friend anouncements
+               // difficult: if privacy value is empty, is it public? it seems to me, but i'm not sure
+               && ( ($entry['privacy']['value'] == "") || ($entry['privacy']['value'] == "EVERYONE") ) // privacy OK? is it public?
+               && $entry['from']['id'] == get_option('facebook_user_id') // only own stuff $user_name stuff
+            )
+        { return false; }
+        else 
+        { return true; }
+    }
+
+    private function map_data($rawData, $type="posts") {
         $data = array();
         if (!is_array($rawData['data'])) {
             // sometimes it's not an array
             return false;
         }
         foreach($rawData['data'] as $entry) {
-            if (    (
-                    /*
-                     * filtering
-                     * we don't want tweets, or ifft-stuff, cause that would
-                     * duplicate the other feeds (or would it not?)
-                     */
-                    (
-                    $entry['application']['name'] != "Twitter" // no tweets
-                    && $entry['application']['namespace'] != "rssgraffiti" // no blog stuff
-                    && $entry['application']['namespace'] != "NetworkedBlogs" // no  NetworkedBlogs syndication
-                    && $entry['application']['namespace'] != "ifthisthenthat" // no instagrams and ifttt
-                    )
-               )
-               && ( $entry['status_type'] != "approved_friend" ) // no new friend anouncements
-               // difficult: if privacy value is empty, is it public? it seems to me, but i'm not sure
-               && ( ($entry['privacy']['value'] == "") || ($entry['privacy']['value'] == "EVERYONE") ) // privacy OK? is it public?
-               && $entry['from']['id'] == get_option('facebook_user_id') // only own stuff $user_name stuff
-            ) {
+            if (!self::filter_item($entry)) {
                 /*
-                 * OK, everything is filtered now, lets proceed ...
-                 */
+                * OK, everything is filtered now, lets proceed ...
+                */
                 $link = self::get_link($entry, 0);
                 $image = self::get_image_url($entry);
                 $title = self::get_title($entry);
@@ -270,9 +343,10 @@ class facebook_reclaim_module extends reclaim_module {
                 // hidden fields for adding syndication links later
                 $post_meta["_".$this->shortname."_link_id"] = $entry["id"];
                 $post_meta["_post_generator"] = $this->shortname;
+                $post_meta["_reclaim_post_type"] = $type;
 
                 // setting for social plugin (https://github.com/crowdfavorite/wp-social/)
-                // to be able to retrieve facebook comments and likes (if social is
+                // to be able to retrieve facebook comments and likes (if social is 
                 // installed)
                 $from = $entry['from']['id'];
                 $id = $entry['id'];

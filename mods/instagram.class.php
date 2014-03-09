@@ -29,6 +29,7 @@ class instagram_reclaim_module extends reclaim_module {
 
     public function __construct() {
         $this->shortname = 'instagram';
+        $this->has_ajaxsync = true;
     }
 
     public function register_settings() {
@@ -44,21 +45,28 @@ class instagram_reclaim_module extends reclaim_module {
     }
 
     public function display_settings() {
-        if ( isset( $_GET['link']) && (strtolower($_GET['mod'])=='instagram') && (isset($_SESSION['hybridauth_user_profile']))) {
+        if ( isset( $_GET['link']) && (strtolower($_GET['mod'])=='instagram') && (isset($_SESSION['login'])) ) { //&& (isset($_SESSION['hybridauth_user_profile']))
             $user_profile       = json_decode($_SESSION['hybridauth_user_profile']);
             $user_access_tokens = json_decode($_SESSION['hybridauth_user_access_tokens']);
-            $error = $_SESSION['e'];
+            $login              = $_SESSION['login'];
+            $error              = $_SESSION['e'];
 
             if ($error) {
-                echo '<div class="error"><p><strong>Error:</strong> ',esc_html( $error ),'</p></div>';
+                echo '<div class="error"><p>'.esc_html( $error ).'</p></div>';
             }
             else {
                 update_option('instagram_user_id', $user_profile->identifier);
                 update_option('instagram_user_name', $user_profile->displayName);
                 update_option('instagram_access_token', $user_access_tokens->access_token);
             }
+            if ( $login == 0 ) {
+                update_option('instagram_user_id', '');
+                update_option('instagram_user_name', '');
+                update_option('instagram_access_token', '');
+            }
 //            print_r($_SESSION);
 //            echo "<pre>" . print_r( $user_profile, true ) . "</pre>" ;
+//            echo "<pre>" . print_r( $_SESSION, true ) . "</pre>" ;
 //            echo $user_access_tokens->accessToken;
 //            echo $user_profile->displayName;
             if(session_id()) {
@@ -66,16 +74,15 @@ class instagram_reclaim_module extends reclaim_module {
             }
         }
 ?>
-        <tr valign="top">
-            <th colspan="2"><a name="<?php echo $this->shortName(); ?>"></a><h3><?php _e('instagram', 'reclaim'); ?></h3></th>
-        </tr>
 <?php
-        parent::display_settings($this->shortname);
+        $displayname = __('instagram', 'reclaim');
+        parent::display_settings($this->shortname, $displayname);
 ?>
         <tr valign="top">
             <th scope="row"><?php _e('Get Favs?', 'reclaim'); ?></th>
             <td><input type="checkbox" name="instagram_import_favs" value="1" <?php checked(get_option('instagram_import_favs')); ?> />
-            <input type="submit" class="button button-primary <?php echo $this->shortName(); ?>_resync_items" value="<?php _e('Resync favs with ajax', 'reclaim'); ?>" data-resync="{type:'favs'}" />
+            <?php if (get_option('instagram_import_favs')) { ?><input type="submit" class="button button-primary <?php echo $this->shortName(); ?>_resync_items" value="<?php _e('Resync favs with ajax', 'reclaim'); ?>" data-resync="{type:'favs'}" /><?php } ?>
+            <?php if (get_option('instagram_import_favs')) { ?><input type="submit" class="button button-secondary <?php echo $this->shortName(); ?>_count_all_items" value="<?php _e('Count with ajax', 'reclaim'); ?>" data-resync="{type:'favs'}" /><?php } ?>
             </td>
         </tr>
         <tr valign="top">
@@ -103,8 +110,14 @@ class instagram_reclaim_module extends reclaim_module {
             <th scope="row"><?php _e('Instagram client secret', 'reclaim'); ?></th>
             <td><input type="text" type="password" name="instagram_client_secret" value="<?php echo get_option('instagram_client_secret'); ?>" />
             <input type="hidden" name="instagram_access_token" value="<?php echo get_option('instagram_access_token'); ?>" />
-            <p class="description">Get your Instagram client and credentials <a href="http://instagram.com/developer/">here</a>. Use <code><?php echo plugins_url('reclaim/vendor/hybridauth/hybridauth/hybridauth/') ?></code> as "OAuth redirect_uri"</p>
-            </td>
+            <p class="description">
+            
+            <?php
+            echo sprintf(__('Get your Instagram client and credentials <a href="%s">here</a>. ','reclaim'),'http://instagram.com/developer/');
+            echo sprintf(__('Use <code>%s</code> as "Redirect URI"','reclaim'),plugins_url('reclaim/vendor/hybridauth/hybridauth/hybridauth/')); 
+            ?>
+            </p>
+           </td>
         </tr>
 
         <tr valign="top">
@@ -139,6 +152,13 @@ class instagram_reclaim_module extends reclaim_module {
                 .'&mod='.$this->shortname
                 .'&callbackUrl='.$callback
                 .'">'.$link_text.'</a>';
+                echo '<a class="button button-secondary" href="'
+                    .plugins_url( '/helper/hybridauth/hybridauth_helper.php' , dirname(__FILE__) )
+                    .'?'
+                    .'&mod='.$this->shortname
+                    .'&callbackUrl='.$callback
+                    .'&login=0'
+                    .'">logout</a>';
 
             }
             else {
@@ -180,19 +200,21 @@ class instagram_reclaim_module extends reclaim_module {
                 $data = self::map_data($rawData, 'posts');
                 parent::insert_posts($data);
                 update_option('reclaim_'.$this->shortname.'_posts_last_update', current_time('timestamp'));
-                parent::log(sprintf(__('END %s import', 'reclaim'), $this->shortname));
+                update_option('reclaim_'.$this->shortname.'_last_update', current_time('timestamp'));
+                parent::log(sprintf(__('END %s posts import', 'reclaim'), $this->shortname));
             }
             else parent::log(sprintf(__('%s returned no data. No import was done', 'reclaim'), $this->shortname));
 
             if (get_option('instagram_import_favs')) {
             //get favs
-            $rawData = parent::import_via_curl(sprintf(self::$fav_apiurl, get_option('instagram_access_token'), self::$count), self::$timeout);
+            $rawData = parent::import_via_curl(sprintf(self::$fav_apiurl, 'user', get_option('instagram_access_token'), self::$count), self::$timeout);
             $rawData = json_decode($rawData, true);
 
             if ($rawData) {
                     $data = self::map_data($rawData, 'favs');
                     parent::insert_posts($data);
                     update_option('reclaim_'.$this->shortname.'_favs_last_update', current_time('timestamp'));
+                    update_option('reclaim_'.$this->shortname.'_last_update', current_time('timestamp'));
                     parent::log(sprintf(__('END %s favs import', 'reclaim'), $this->shortname));
                 }
                 else parent::log(sprintf(__('%s favs returned no data. No import was done', 'reclaim'), $this->shortname));
@@ -224,7 +246,7 @@ class instagram_reclaim_module extends reclaim_module {
             }
             else {
                 $apiurl_ = ($type == 'posts' ? self::$apiurl : self::$fav_apiurl);
-                $rawData = parent::import_via_curl(sprintf($apiurl_, get_option('instagram_user_id'), get_option('instagram_access_token'), self::$count, $min_id), self::$timeout);
+                $rawData = parent::import_via_curl(sprintf($apiurl_, get_option('instagram_user_id'), get_option('instagram_access_token'), self::$count), self::$timeout);
             }
 
             $rawData = json_decode($rawData, true);
@@ -232,14 +254,15 @@ class instagram_reclaim_module extends reclaim_module {
                 $data = self::map_data($rawData, $type);
                 parent::insert_posts($data);
                 update_option('reclaim_'.$this->shortname.'_'.$type.'_last_update', current_time('timestamp'));
+                update_option('reclaim_'.$this->shortname.'_last_update', current_time('timestamp'));
                 
                 if (!isset($rawData['pagination']['next_url'])) { 
                     //$return['error'] = sprintf(__('%s %s import done.', 'reclaim'), $type, $this->shortname); 
                     $return['result'] = array(
                         // when we're done, tell ajax script the number of imported items
                         // and that we're done (offset == count)
-                        'offset' => $offset,
-                        'count' => $offset ,
+                        'offset' => $offset + sizeof($data),
+                        'count' => $offset + sizeof($data),
                         'next_url' => $rawData['pagination']['next_url'],
                     );
                 } else {
@@ -318,6 +341,7 @@ class instagram_reclaim_module extends reclaim_module {
 
             $post_meta["_".$this->shortname."_link_id"] = $entry["id"];
             $post_meta["_post_generator"] = $this->shortname;
+            $post_meta["_reclaim_post_type"] = $type;
 
             $data[] = array(
                 'post_author' => get_option($this->shortname.'_author'),
@@ -346,7 +370,7 @@ class instagram_reclaim_module extends reclaim_module {
             // this name 'type' should be better choosen not to break other things
             // in wordpress maybe mod_instagram_type
             $type = isset($_POST['type']) ? $_POST['type'] : $type;
-            if ($type == "favs") { return 99999; }
+            if ($type == "favs") { return 999999; }
             $rawData = parent::import_via_curl(sprintf(self::$apiurl_count, get_option('instagram_user_id'), get_option('instagram_access_token')), self::$timeout);
             $rawData = json_decode($rawData, true);
             return $rawData['data']['counts']['media'];

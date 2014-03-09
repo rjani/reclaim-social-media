@@ -31,6 +31,7 @@ class twitter_reclaim_module extends reclaim_module {
 
     public function __construct() {
         $this->shortname = 'twitter';
+        $this->has_ajaxsync = true;
     }
 
     public function register_settings() {
@@ -47,16 +48,15 @@ class twitter_reclaim_module extends reclaim_module {
 
     public function display_settings() {
 ?>
-        <tr valign="top">
-            <th colspan="2"><a name="<?php echo $this->shortName(); ?>"></a><h3><?php _e('Twitter', 'reclaim'); ?></h3></th>
-        </tr>
 <?php
-        parent::display_settings($this->shortname);
+        $displayname = __('Twitter', 'reclaim');
+        parent::display_settings($this->shortname, $displayname);
 ?>
         <tr valign="top">
             <th scope="row"><?php _e('Get Favs?', 'reclaim'); ?></th>
             <td><input type="checkbox" name="twitter_import_favs" value="1" <?php checked(get_option('twitter_import_favs')); ?> />
             <?php if (get_option('twitter_import_favs')) { ?><input type="submit" class="button button-primary <?php echo $this->shortName(); ?>_resync_items" value="<?php _e('Resync favs with ajax', 'reclaim'); ?>" data-resync="{type:'favs'}" /><?php } ?>
+            <?php if (get_option('twitter_import_favs')) { ?><input type="submit" class="button button-secondary <?php echo $this->shortName(); ?>_count_all_items" value="<?php _e('Count with ajax', 'reclaim'); ?>" data-resync="{type:'favs'}" /><?php } ?>
             </td>
         </tr>
         <tr valign="top">
@@ -81,7 +81,9 @@ class twitter_reclaim_module extends reclaim_module {
         </tr>
         <tr valign="top">
             <th scope="row"><?php _e('twitter user secret', 'reclaim'); ?></th>
-            <td><input type="text" name="twitter_user_secret" value="<?php echo get_option('twitter_user_secret'); ?>" /></td>
+            <td><input type="text" name="twitter_user_secret" value="<?php echo get_option('twitter_user_secret'); ?>" />
+            <p class="description"><?php echo sprintf(__('Some help on how to get the keys and secrets <a href="%s">here</a>.','reclaim'), 'https://github.com/espresto/reclaim-social-media/wiki/Get-API-keys-for-Twitter'); ?></p>
+            </td>
         </tr>
 <?php
     }
@@ -102,8 +104,8 @@ class twitter_reclaim_module extends reclaim_module {
     }
 
     // called from ajax sync, calls import_tweet()
-    public function ajax_resync_items() {
-        $type = isset($_POST['type']) ? $_POST['type'] : 'posts';
+    public function ajax_resync_items($type="posts") {
+        $type = isset($_POST['type']) ? $_POST['type'] : $type;
     	$offset = intval( $_POST['offset'] );
     	$limit = intval( $_POST['limit'] );
     	$count = intval( $_POST['count'] );
@@ -144,7 +146,7 @@ class twitter_reclaim_module extends reclaim_module {
 
     // called from import(), uses import_tweet()
     private function resync_items( $forceResync, $type = "posts" ) {
-
+            $type = isset($_POST['type']) ? $_POST['type'] : $type;
             $lastseenid = get_option('reclaim_'.$this->shortname.'_'.$type.'_last_seen_id');
             $reqOptions = array(
                 'lang' => substr(get_bloginfo('language'), 0, 2),
@@ -178,16 +180,15 @@ class twitter_reclaim_module extends reclaim_module {
                 $reqOk = $return['result']['reqOk'];
                 $reqOk = (self::$max_import_loops > 0 && $i >= self::$max_import_loops ? false : $reqOk);
                 $reqOK = (isset($return['error']) ? false : $reqOk);
-                // store the last-seen-id, which is the first message of the first request
-                $lastseenid = (!isset($lastid) && $reqOk ? $lastseenid = $data[0]["ext_guid"] : null);
+                // last-seen-id already stored by import_tweets()
+                $lastseenid = get_option('reclaim_'.$this->shortname.'_'.$type.'_last_seen_id');
                 $lastid = $return['result']['next_url'];
                 parent::log(sprintf(__('Retrieved set of twitter messages (%s): %d, last seen id: %s, last id in batch: %s, req-ok: %d, error: %s', 'reclaim'), $type, $return['result']['offset'], $lastseenid, $lastid, $reqOk, $return['error']));
                 $i++;
             } while ($reqOk);
 
             update_option('reclaim_'.$this->shortname.'_last_update', current_time('timestamp'));
-            update_option('reclaim_'.$this->shortname.'_'.$type.'_last_seen_id', $lastseenid);
-            }
+        }
 
     // utility function that makes the actual API calls for ajax_resync_items() and resync_items ()
     private function import_tweets($apiurl_, $reqOptions, $type = "posts", $offset = 0) {
@@ -216,7 +217,7 @@ class twitter_reclaim_module extends reclaim_module {
 				'next_url' => $lastid,
 				'reqOk' => $reqOk,
 			);
-    		$return['success'] = true;
+    		$return['success'] = $reqOk;
 		}
         elseif ($tmhOAuth->response['code'] != 200) { //&& $offset != 0
             /*
@@ -236,10 +237,30 @@ class twitter_reclaim_module extends reclaim_module {
         return $return;
     }
 
+    private function filter_item($entry) {
+        // first, lets get an array of all actice mods
+        $needles = reclaim_core::modNameList();
+        // we don't want twitter to filter itself
+        if(($key = array_search('twitter', $needles)) !== false) {
+            unset($needles[$key]);
+        }
+        // and now lets check if the tweet source matches any of the mod names
+        // this should filter out instagram, yelp, youtube, etc.
+        if (parent::strpos_array($entry['source'], $needles)) {
+            parent::log('filtered a tweet because of this source: '. $entry['source']);
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
+    
     private function map_data($rawData, $type = "posts") {
         $data = array();
         $tags = array();
         foreach($rawData as $entry){
+        // first check if post should be filtered
+        if (!self::filter_item($entry)) {
             $content = self::construct_content($entry);
             $tags = self::get_hashtags($entry);
 
@@ -278,6 +299,7 @@ class twitter_reclaim_module extends reclaim_module {
 
             $post_meta["_".$this->shortname."_link_id"] = $entry["id"];
             $post_meta["_post_generator"] = $this->shortname;
+            $post_meta["_reclaim_post_type"] = $type;
 
             // setting for social plugin (https://github.com/crowdfavorite/wp-social/)
             // to be able to retrieve twitter replies (if wp-social is installed)
@@ -304,7 +326,8 @@ class twitter_reclaim_module extends reclaim_module {
                 'ext_guid' => $entry["id_str"],
                 'post_meta' => $post_meta
             );
-        }
+        } // end if filter
+        } // end foreach
         return $data;
     }
 
@@ -318,9 +341,9 @@ class twitter_reclaim_module extends reclaim_module {
         return $tags;
     }
 
-    public function count_items() {
+    public function count_items( $type="posts" ) {
         $type = isset($_POST['type']) ? $_POST['type'] : $type;
-        if ($type == "favs") { return 99999; }
+        if ($type == "favs") { return 999999; }
         $reqOptions = array(
             'screen_name' => get_option('twitter_username'),
             'include_entities' => "false"

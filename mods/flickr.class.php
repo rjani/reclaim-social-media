@@ -44,6 +44,7 @@ class flickr_reclaim_module extends reclaim_module {
 
     public function __construct() {
         $this->shortname = 'flickr';
+        $this->has_ajaxsync = true;
     }
 
     public function register_settings() {
@@ -55,11 +56,9 @@ class flickr_reclaim_module extends reclaim_module {
 
     public function display_settings() {
 ?>
-        <tr valign="top">
-            <th colspan="2"><a name="<?php echo $this->shortName(); ?>"></a><h3><?php _e('Flickr', 'reclaim'); ?></h3></th>
-        </tr>
 <?php
-        parent::display_settings($this->shortname);
+        $displayname = __('Flickr', 'reclaim');
+        parent::display_settings($this->shortname, $displayname);
 ?>
         <tr valign="top">
             <th scope="row"><?php _e('flickr user id', 'reclaim'); ?></th>
@@ -218,7 +217,7 @@ class flickr_reclaim_module extends reclaim_module {
         return $data;
     }
 
-    private function map_api_data($rawData) {
+    private function map_api_data($rawData, $type="posts") {
         $data = array();
         foreach($rawData['photos']['photo'] as $entry) {
             $title = $entry['title'];
@@ -249,6 +248,7 @@ class flickr_reclaim_module extends reclaim_module {
 
             $post_meta["_".$this->shortname."_link_id"] = $id;
             $post_meta["_post_generator"] = $this->shortname;
+            $post_meta["_reclaim_post_type"] = $type;
 
             $data[] = array(
                 'post_author' => get_option($this->shortname.'_author'),
