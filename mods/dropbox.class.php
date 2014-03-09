@@ -53,25 +53,25 @@ class dropbox_reclaim_module extends reclaim_module {
             if ( ! class_exists( 'SimplePie' ) )
                 require_once( ABSPATH . WPINC . '/class-feed.php' );
 
-            $rss_source = get_option('dropbox_feed_url');
+            $url = get_option('dropbox_feed_url');
             
-            /* Create the SimplePie object */
             $feed = new SimplePie();
-            /* Set the URL of the feed you're retrieving */
-            $feed->set_feed_url( $rss_source );
-            /* Tell SimplePie to cache the feed using WordPress' cache class */
+            
+            $feed->set_sanitize_class( 'WP_SimplePie_Sanitize_KSES' );
+            // We must manually overwrite $feed->sanitize because SimplePie's
+            // constructor sets it before we have a chance to set the sanitization class
+            $feed->sanitize = new WP_SimplePie_Sanitize_KSES();
+            
             $feed->set_cache_class( 'WP_Feed_Cache' );
-            /* Tell SimplePie to use the WordPress class for retrieving feed files */
             $feed->set_file_class( 'WP_SimplePie_File' );
-            /* Tell SimplePie how long to cache the feed data in the WordPress database */
-            $feed->set_cache_duration( apply_filters( 'wp_feed_cache_transient_lifetime', get_option('reclaim_update_interval'), $rss_source ) );
-            /* Run any other functions or filters that WordPress normally runs on feeds */
-            do_action_ref_array( 'wp_feed_options', array( &$feed, $rss_source ) );
-            /* Initiate the SimplePie instance */
+            
+            $feed->set_feed_url( $url );
+            $feed->set_cache_duration( apply_filters( 'wp_feed_cache_transient_lifetime', get_option('reclaim_update_interval'), $url ) );
+            do_action_ref_array( 'wp_feed_options', array( &$feed, $url ) );
+            
             $feed->init();
-            /* Tell SimplePie to send the feed MIME headers */
             $feed->handle_content_type();
-
+            
             if ( $feed->error() ) {
                 parent::log(sprintf(__('no %s data', 'reclaim'), $this->shortname));
                 parent::log($feed->error());
@@ -86,7 +86,7 @@ class dropbox_reclaim_module extends reclaim_module {
     }
 
     private function map_data($feed) {
-        $data = array();
+        $data  = array();
         $count = self::$count;
 
         foreach( $feed->get_items( 0, $count ) as $item ) {
@@ -110,8 +110,9 @@ class dropbox_reclaim_module extends reclaim_module {
 
             $exists = get_posts(array(
             		'post_type' => 'post', 
-            		'meta_query' => array( array('key' => 'original_guid', 'value' => $guid, 'compare' => 'like') )
-            ));
+            		'meta_query' => array( array('key' => 'original_guid', 'value' => $guid) )
+				));
+
             if(!$exists) {
 	            $data[] = array(
     	            'post_author' => get_option(self::shortName().'_author'),

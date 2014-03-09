@@ -21,10 +21,6 @@
         	"type": "vcs",
 	        "url": "https://github.com/diplix/URLResolver.php"
 	    },
-    	{
-        	"type": "vcs",
-	        "url": "https://github.com/rjani/exclude_content"
-	    },
 		{
 			"type": "package",
             "package": {
@@ -44,7 +40,6 @@
         "hybridauth/hybridauth": "dev-master",
         "euskadi31/opengraph": "dev-master",
         "diplix/URLResolver.php": "dev-master",
-        "rjani/exclude_content": "0.2.0",
 		"jqplot": "*"
     },
 	"autoload": {
