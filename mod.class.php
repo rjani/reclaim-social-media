@@ -20,6 +20,7 @@
 class reclaim_module {
 	private static $force_delete = true;
     protected $shortname;
+    protected $has_ajaxsync;
 
     public function register_settings($modname) {
         register_setting('reclaim-social-settings', $modname.'_active');
@@ -27,30 +28,51 @@ class reclaim_module {
         register_setting('reclaim-social-settings', $modname.'_author');
     }
 
-    public function display_settings($modname) {
+    public function display_settings($modname, $displayname = null) {
 ?>
         <tr valign="top">
-            <th scope="row"><?php _e('Active', 'reclaim'); ?></th>
-            <td><input type="checkbox" name="<?php echo $modname; ?>_active" value="1" <?php checked(get_option($modname.'_active')); ?> />
-                <?php if (get_option($modname.'_active')) :?>
-                    <em><?php printf(__('last update %s', 'reclaim'), date(get_option('date_format').' '.get_option('time_format'), get_option('reclaim_'.$modname.'_last_update'))); ?></em><br/>
-                    <input type="submit" class="button button-primary" value="<?php _e('Re-Sync', 'reclaim'); ?>" name="<?php echo $modname; ?>_resync" />
-                    <input type="submit" class="button button-primary" value="<?php _e('Reset', 'reclaim'); ?>" name="<?php echo $modname; ?>_reset" />
-                    <?php $count = $this->count_posts(); ?>
-                    <?php if ($count > 0) :?>
-                    	<input type="submit" class="button button-primary" value="<?php _e('Remove '.$count.' Posts', 'reclaim'); ?>" name="<?php echo $modname; ?>_remove_posts" />
-                    <?php endif; ?>
-                    <input type="submit" id="<?php echo $modname; ?>_count_all_items" class="button button-primary" value="<?php _e('Count with ajax', 'reclaim'); ?>" />
-                    <input type="submit" id="<?php echo $modname; ?>_resync_items" class="button button-primary" value="<?php _e('Resync with ajax', 'reclaim'); ?>" />
-                    <span id="<?php echo $modname; ?>_spinner" class="spinner"></span>
-                    
-                    <div id="<?php echo $modname; ?>_notice" class="updated inline" style="display:none">
-						<p><strong class="message"></strong></p>
-                    </div>
-                    
-                <?php endif;?>
+            <th scope="row">
+            <?php if (isset($displayname)) { echo '<h3>'.$displayname.'</h3>'; } ?>
+            </th>
+            <td>
+            <fieldset>
+            <legend class="screen-reader-text"><span><?php _e('Active', 'reclaim'); ?></span></legend>
+            <label for="<?php echo $modname; ?>_active"><input type="checkbox" name="<?php echo $modname; ?>_active" value="1" <?php checked(get_option($modname.'_active')); ?> />
+            <?php _e('Active', 'reclaim'); ?>
+            <?php if (get_option($modname.'_active')) :?>
+            <em>(<?php printf(__('last update %s', 'reclaim'), date_i18n(get_option('date_format').' '.get_option('time_format'), get_option('reclaim_'.$modname.'_last_update'))); ?>)</em>
+            <?php endif;?>
+            </label>
+            </fieldset>
             </td>
         </tr>
+        <?php if (get_option($modname.'_active')) :?>
+        <tr valign="top">
+            <th scope="row"></th>
+            <td>
+                    <?php if ($this->has_ajaxsync()) :?>
+                        <input type="submit" class="button button-primary <?php echo $modname; ?>_resync_items" value="<?php _e('Resync with ajax', 'reclaim'); ?>" />
+                        <input type="submit" class="<?php echo $modname; ?>_count_all_items button button-secondary" value="<?php _e('Count with ajax', 'reclaim'); ?>" />
+                    <?php else :?>
+                        <input type="submit" class="button button-primary" value="<?php _e('Re-Sync', 'reclaim'); ?>" name="<?php echo $modname; ?>_resync" />
+                    <?php endif;?>
+                    <input type="submit" class="button button-secondary" value="<?php _e('Reset', 'reclaim'); ?>" name="<?php echo $modname; ?>_reset" />
+                    <?php $count = $this->count_posts(); ?>
+                    <?php if ($count > 0) :?>
+                    	<input type="submit" class="button button-secondary" value="<?php echo sprintf(__('Remove %s Posts', 'reclaim'), $count); ?>" name="<?php echo $modname; ?>_remove_posts" />
+                    <?php endif; ?>
+                    <input type="submit" class="button button-secondary" name="submit" value="<?php _e('Save', 'reclaim'); ?>" name="<?php echo $modname; ?>_save" />
+
+                    <?php if ($this->has_ajaxsync()) :?>
+                        <span id="<?php echo $modname; ?>_spinner" class="spinner"></span>
+                        <div id="<?php echo $modname; ?>_notice" class="updated inline" style="display:none">
+						    <p><strong class="message"></strong></p>
+                        </div>
+                    <?php endif;?>
+                    <p><em></em></p>
+            </td>
+        </tr>
+        <?php endif;?>
         <tr valign="top">
             <th scope="row"><?php _e('Category', 'reclaim'); ?></th>
             <td><?php wp_dropdown_categories(array('hierarchical' => 1, 'name' => $modname.'_category', 'hide_empty' => 0, 'selected' => get_option($modname.'_category'))); ?></td>
@@ -67,6 +89,13 @@ class reclaim_module {
     */
     public function shortName() {
         return $this->shortname;
+    }
+
+    /**
+    * Interface
+    */
+    public function has_ajaxsync() {
+        return $this->has_ajaxsync;
     }
 
     /**
@@ -145,7 +174,15 @@ class reclaim_module {
     /**
      *
      */
-    public function count_posts() {
+    public function count_posts($type = null) {
+        if (isset($type)) { 
+            $type_query =  array(
+                                 'key' => '_reclaim_post_type',
+                                 'value' => $type,
+                                 'compare' => 'like'
+                            );
+        } else {$type_query = array();}
+
     	$posts = new WP_Query(array(
     			'posts_per_page' => -1,
     			'post_type' => 'post',
@@ -154,7 +191,8 @@ class reclaim_module {
     							'key' => '_post_generator',
     							'value' => $this->shortName(),
     							'compare' => 'like'
-    					)
+    					), 
+    					$type_query
     			)
     	));
 
@@ -188,6 +226,23 @@ class reclaim_module {
         return trim($response['body']);
     }
 
+    public static function post_exists($id) {
+        return get_posts(array(
+                'post_type' => 'post',
+                // this is how we honor posts in the trash or marked as draft:
+                // if the exist, these will not be resyndicated 
+                // (without this, posts could not be deleted)
+                'post_status' => array('publish', 'pending', 'draft', 'auto-draft', 'future', 'private', 'inherit', 'trash'),
+                'meta_query' => array(
+                    array(
+                        'key' => 'original_guid',
+                        'value' => $id,
+                        'compare' => 'like'
+                    )
+                )
+            ));
+    }
+
     /**
     *
     */
@@ -197,17 +252,7 @@ class reclaim_module {
         }
 
         foreach ($data as $post) {
-            $exists = get_posts(array(
-                'post_type' => 'post',
-                'meta_query' => array(
-                    array(
-                        'key' => 'original_guid',
-                        'value' => $post['ext_guid'],
-                        'compare' => 'like'
-                    )
-                )
-            ));
-            if (!$exists) {
+            if (!self::post_exists($post['ext_guid'])) {
                 $inserted_post_id = wp_insert_post($post);
                 update_post_meta($inserted_post_id, 'original_permalink', $post['ext_permalink']);
                 update_post_meta($inserted_post_id, 'original_guid', $post['ext_guid']);
@@ -222,8 +267,8 @@ class reclaim_module {
                 if ($ext_embed_code) {
                     update_post_meta($inserted_post_id, 'embed_code', $post['ext_embed_code']);
                 }
-                $ext_image = isset($post['ext_image']) && !is_array($post['ext_image']) ? trim($post['ext_image']) : '';
-                if ($ext_image) {
+                //$ext_image = isset($post['ext_image']) && !is_array($post['ext_image']) ? trim($post['ext_image']) : '';
+                if (!empty($post['ext_image'])) {
                     if (!is_array($post['ext_image'])) {
                         update_post_meta($inserted_post_id, 'image_url', trim($post['ext_image']));
                         self::post_image_to_media_library($post['ext_image'], $inserted_post_id, $post['post_title'], true, $post['post_date']);
@@ -282,7 +327,7 @@ class reclaim_module {
 
         // sometimes facebook offers very long filename
         // if so, file_put_contents() throws an error
-        if (strlen($newfilename) > 70) {
+        if ( (strlen($newfilename) > 70) || (strlen($newfilename) < 10) ) {
             $newfilename = uniqid() . $ext;
         }
 
@@ -301,10 +346,30 @@ class reclaim_module {
             if ( (!substr_count($headers["content-type"], "image") &&
                  !substr_count($wp_filetype['type'], "image")) || 
                  !isset($headers) ) {
-                self::log( basename($imageurl) . ' is not a valid image: ' . $wp_filetype['type'] . ' - ' . $headers["content-type"] );
-                return;
-            }
 
+                if (substr_count($headers["content-type"], "octet-stream")) {
+                    self::log( basename($imageurl) . ' is not a valid image: ' . $wp_filetype['type'] . ' - ' . $headers["content-type"] . ' - trying to download it anyways...' );
+                    /* workaround for twitpic: sometimes images return a header application/octet-stream
+                     * in a browsers, this triggers a download. here it means the image won't be loaded.
+                     * this makes it work. :( 
+                     * ix@wirres.net, 2014-03-03
+                     */ 
+                    $headers["content-type"] = "image/jpeg";
+                } else {
+                    self::log( basename($imageurl) . ' is not a valid image: ' . $wp_filetype['type'] . ' - ' . $headers["content-type"] );
+                    return;
+                }
+
+            }
+            if (substr_count($headers["content-type"], "octet-stream")) {
+                self::log( basename($imageurl) . ' is not a valid image: ' . $wp_filetype['type'] . ' - ' . $headers["content-type"] . ' - trying to download it anyways (2)...' );
+                /* workaround for twitpic: sometimes images return a header application/octet-stream
+                 * in a browsers, this triggers a download. here it means the image won't be loaded.
+                 * this makes it work. :( 
+                 * ix@wirres.net, 2014-03-03
+                 */ 
+                $headers["content-type"] = "image/jpeg";
+            }
             $image_string = wp_remote_retrieve_body($image_string);
             $fileSaved = file_put_contents($uploads['path'] . "/" . $filename, $image_string);
             if ( !$fileSaved ) {
@@ -380,12 +445,15 @@ class reclaim_module {
 	}
 	
 	public function ajax_count_all_items() {
+		$items = $this->count_items( $_POST['type'] );
+		if ($items == 999999) {$items = __('Unknown number of', 'reclaim');}
+		$posts = $this->count_posts( $_POST['type'] );
 		echo (json_encode(array(
 			'success' => true,
-			'result' => $this->count_items().' '
-            	.translate('items available', 'reclaim')
-            	.', '.$this->count_posts().' '
-            	.translate('posts created', 'reclaim')
+			'result' => $items.' '
+            	.__('items available', 'reclaim')
+            	.', '.$posts.' '
+            	.__('posts created', 'reclaim')
 		)));
 		
 		die();
@@ -405,6 +473,7 @@ class reclaim_module {
 		$offset = intval( $_POST['offset'] );
 		$limit = intval( $_POST['limit'] );
 		$count = intval( $_POST['count'] );
+		$type = $_POST['type'];
 		
 		self::log($this->shortName().' resync '.$offset.'-'.($offset + $limit).':'.$count);
 		
@@ -423,18 +492,33 @@ class reclaim_module {
 			var modname = '<?php echo($this->shortName()); ?>';
 
 			
-			$('#'+modname+'_count_all_items').click(function(eventObject) {
+			$('.'+modname+'_count_all_items').click(function(eventObject) {
 				var r = reclaim.getInstance(modname, eventObject);
+				var options = {};
+				if ($(eventObject.target).data('resync')) {
+					options = eval('('+$(eventObject.target).data('resync')+')');
+				}
 
-				r.count_all_items();
+				r.count_all_items(options);
 				
 				return false;
 			});
 
-			$('#'+modname+'_resync_items').click(function(eventObject) {
+			$('.'+modname+'_resync_items').click(function(eventObject) {
 				var r = reclaim.getInstance(modname, eventObject);
+				// the options is generated from a json-field in the
+				// dom of the clicked object:
+				// eg: data-resync="{type:'favs'}"
+				// the properties in this field are passed back to
+				// wordpress via POST-variables
+				// fieldvalues with the protected name 'offset' will be deleted.
+				var options = {};
+				
+				if ($(eventObject.target).data('resync')) {
+					options = eval('('+$(eventObject.target).data('resync')+')');
+				}
 
-				r.resync_items();
+				r.resync_items(options);
 				
 				return false;
 			});
@@ -442,5 +526,33 @@ class reclaim_module {
 		</script>
 		<?php		
 	}
-}
 
+    function short_title($title = '', $after = '&nbsp;&hellip;', $length) {
+        $mytitle = explode(' ', $title, $length);
+        if (count($mytitle)>=$length) {
+            array_pop($mytitle);
+            $mytitle = implode(" ",$mytitle). $after;
+        } else {
+            $mytitle = implode(" ",$mytitle);
+        }
+        return $mytitle;
+    }
+
+    function strpos_array($haystack, $needles) {
+        if ( is_array($needles) ) {
+            foreach ($needles as $str) {
+                if ( is_array($str) ) {
+                    $pos = strpos_array($haystack, $str);
+                } else {
+                    $pos = strpos($haystack, $str);
+                }
+                if ($pos !== FALSE) {
+                    return $pos;
+                }
+            }
+        } else {
+            return strpos($haystack, $needles);
+        }
+    }
+
+}

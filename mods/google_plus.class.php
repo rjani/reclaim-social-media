@@ -17,15 +17,14 @@
 */
 
 class google_plus_reclaim_module extends reclaim_module {
-    private static $apiurl = "https://www.googleapis.com/plus/v1/people/%s/activities/public/?key=%s&maxResults=%s&pageToken=";
-    private static $apiurl_count = "https://www.googleapis.com/plus/v1/people/%s/activities/public/?key=%s&maxResults=%s&pageToken=";
-    
-    private static $count = 100; // max = 100
+    private static $apiurl = "https://www.googleapis.com/plus/v1/people/%s/activities/public/?key=%s&maxResults=%s&pageToken=%s";
+    private static $count = 10; // max = 100
     private static $timeout = 15;
     private static $post_format = 'aside'; // or 'status', 'aside'
 
     public function __construct() {
         $this->shortname = 'google_plus';
+        $this->has_ajaxsync = true;
     }
 
     public function register_settings() {
@@ -37,11 +36,9 @@ class google_plus_reclaim_module extends reclaim_module {
 
     public function display_settings() {
 ?>
-        <tr valign="top">
-            <th colspan="2"><a name="<?php echo $this->shortName(); ?>"></a><h3><?php _e('Google+', 'reclaim'); ?></h3></th>
-        </tr>
 <?php
-        parent::display_settings($this->shortname);
+        $displayname = __('Google+', 'reclaim');
+        parent::display_settings($this->shortname, $displayname);
 ?>
         <tr valign="top">
             <th scope="row">
@@ -54,14 +51,65 @@ class google_plus_reclaim_module extends reclaim_module {
                 <hr />
                 <label for="google_api_key"><?php _e('Google API Key', 'reclaim'); ?></label>
                 <input type="text" name="google_api_key" class="widefat" value="<?php echo get_option('google_api_key'); ?>" />
+                <p class="description">
+                <?php
+                echo sprintf(__('Read more info about the G+ API <a href="%s" target="_blank">here</a>','reclaim'),'https://github.com/espresto/reclaim-social-media/wiki/Get-API-keys-for-Google-');
+                ?>
+                </p>
             </td>
         </tr>
 <?php
     }
-
-    public function import($forceResync) {
+    public function ajax_resync_items() {
+		$offset = intval( $_POST['offset'] );
+		$limit = intval( $_POST['limit'] );
+		$count = intval( $_POST['count'] );
+    	$next_url = isset($_POST['next_url']) ? $_POST['next_url'] : '';
+    
+    	self::log($this->shortName().' resync '.$offset.'-'.($offset + $limit).':'.$count);
+    	 
+    	$return = array(
+    		'success' => false,
+    		'error' => '',
+			'result' => null
+    	);
+    	    	
         if (get_option('google_api_key') && get_option('google_plus_user_id')) {
-            $rawData = parent::import_via_curl(sprintf(self::$apiurl, get_option('google_plus_user_id'), get_option('google_api_key'), self::$count), self::$timeout);
+    		// $next_url is actually the nextPageToken
+    		if ($next_url != '') {
+                $rawData = parent::import_via_curl(sprintf(self::$apiurl, get_option('google_plus_user_id'), get_option('google_api_key'), self::$count, $next_url), self::$timeout);
+			}
+			else {
+                $rawData = parent::import_via_curl(sprintf(self::$apiurl, get_option('google_plus_user_id'), get_option('google_api_key'), self::$count, ""), self::$timeout);
+    		}
+            $rawData = json_decode($rawData, true);
+
+            if (is_array($rawData) && !isset($rawdata['code'])) {
+                $data = self::map_data($rawData);
+                parent::insert_posts($data);
+                update_option('reclaim_'.$this->shortname.'_last_update', current_time('timestamp'));
+    			$return['result'] = array(
+    				'offset' => $offset + sizeof($data),
+					// use nextPageToken instead of url
+					'next_url' => $rawData['nextPageToken'],
+    			);
+    			$return['success'] = true;
+            }
+    		else $return['error'] = sprintf(__('%s returned no data. No import was done', 'reclaim'), $this->shortname);
+    		
+    	}
+    	else $return['error'] = sprintf(__('%s user data missing. No import was done', 'reclaim'), $this->shortname);
+
+    	echo(json_encode($return));
+    	 
+    	die();
+    }
+
+    // this is only one loop, that is triggered through force refresh or the autoupdate
+    // function. it gets the number of posts defined in $count
+    public function import($forceResync) { 
+        if (get_option('google_api_key') && get_option('google_plus_user_id')) {
+            $rawData = parent::import_via_curl(sprintf(self::$apiurl, get_option('google_plus_user_id'), get_option('google_api_key'), self::$count,""), self::$timeout);
             //parent::log(print_r($rawData,true));
             $rawData = json_decode($rawData, true);
             if (is_array($rawData) && !isset($rawdata['code'])) {
@@ -73,7 +121,7 @@ class google_plus_reclaim_module extends reclaim_module {
         else parent::log(sprintf(__('%s user data missing. No import was done', 'reclaim'), $this->shortname));
     }
 
-    public function map_data($rawData) {
+    public function map_data($rawData, $type="posts") {
         $data = array();
         foreach($rawData['items'] as $entry) {
             $title = self::get_title($entry);
@@ -84,6 +132,7 @@ class google_plus_reclaim_module extends reclaim_module {
 
             $post_meta["_".$this->shortname."_link_id"] = $entry["id"];
             $post_meta["_post_generator"] = $this->shortname;
+            $post_meta["_reclaim_post_type"] = $type;
 
             $data[] = array(
                 'post_author' => get_option($this->shortname.'_author'),
@@ -104,19 +153,10 @@ class google_plus_reclaim_module extends reclaim_module {
         }
         return $data;
     }
-    
+
     public function count_items() {
-        if (get_option('google_api_key') && get_option('google_plus_user_id')) {
-            $rawData = parent::import_via_curl(sprintf(self::$apiurl_count, get_option('google_plus_user_id'), get_option('google_api_key'), self::$count), self::$timeout);
-            
-            $rawData = json_decode($rawData, true);
-            if (is_array($rawData) && !isset($rawdata['code'])) {
-    	    	return sizeof($rawData['items']);
-            }
-    	}
-    	else {
-    		return false;
-    	}
+        // found no way to determine the overall post count on g+
+        return 999999;
     }
 
     private function get_post_format($entry) {

@@ -4,13 +4,13 @@ jQuery(document).ready(function($) {
 	reclaim.instances = {};
 	
 	reclaim.getInstance = function(modname, eventObject) {
-		if (!reclaim.instances[eventObject.target.id]) {
+		if (!reclaim.instances[eventObject.target]) {
 			var r = new reclaim();
 			r.init(modname, eventObject);
-			reclaim.instances[eventObject.target.id] = r;
+			reclaim.instances[eventObject.target] = r;
 		}
 		
-		return reclaim.instances[eventObject.target.id];
+		return reclaim.instances[eventObject.target];
 	}
 	
 	reclaim.prototype = {
@@ -38,7 +38,7 @@ jQuery(document).ready(function($) {
 			
 			if (!this.target_text) {
 				this.target_text = $(this.eventObject.target).val();
-				$(this.eventObject.target).val('Cancel '+this.target_text);
+				$(this.eventObject.target).val( admin_reclaim_script_translation.Cancel + this.target_text );
 			}
 			
 			this.running = true;
@@ -62,7 +62,7 @@ jQuery(document).ready(function($) {
 		
 		ajax_abort : function() {
 			this.aborted = true;
-			this.ajax_end('Canceled.');
+			this.ajax_end(admin_reclaim_script_translation.Canceled);
 			
 			if (this.request) {
 				this.request.abort();
@@ -79,32 +79,33 @@ jQuery(document).ready(function($) {
 				type : 'POST',
 				success : function(data) {
 					if (!data) {
-						that.ajax_end('Whoops! Returned data must be not null.');
+						that.ajax_end(admin_reclaim_script_translation.Whoops_Returned_data_must_be_not_null);
 					}
 					else if (data.success) {
 						callback(data.result);
 					} else {
-						that.ajax_end('Error occured: ' + data.error);
+						that.ajax_end(admin_reclaim_script_translation.Error_occured + data.error);
 					}
 				}
 			});
 		},
 		
 		// functions that get called on click or something like that
-		count_all_items: function() {
+		count_all_items: function(options) {
 			if (this.is_running()) {
 				this.ajax_abort();
 			}
 			else {
-				this.ajax_start('Count items and posts...');
-	
-				this.ajax('count_all_items', {}, $.proxy(function(result) {
+				this.ajax_start(admin_reclaim_script_translation.Count_items_and_posts);
+				var o = $.extend({}, options);
+
+				this.ajax('count_all_items', o, $.proxy(function(result) {
 					this.ajax_end(result);
 				}, this));
 			}
 		},
-		
-		resync_items: function() {
+
+		resync_items: function(options) {
 			if (this.is_running()) {
 				this.ajax_abort();
 				
@@ -113,22 +114,23 @@ jQuery(document).ready(function($) {
 				}
 			}
 			else {
-				this.ajax_start('Count items...');
+				this.ajax_start(admin_reclaim_script_translation.Count_items);
+				var o = $.extend({}, options);
 	
-				this.ajax('count_items', {}, $.proxy(function(result) {
+				this.ajax('count_items', o, $.proxy(function(result) {
 					if (this.is_aborted()) {
 						// do nothing
 					}
 					else if (isNaN(result)) {
-						this.ajax_end('item count is not a valid numbethis. value=' + result);
+						this.ajax_end(admin_reclaim_script_translation.item_count_is_not_a_valid_number + result);
 					}
 					else if (result <= 0) {
-						this.ajax_end('Not a valid item count: ' + result);
+						this.ajax_end(admin_reclaim_script_translation.Not_a_valid_item_count + result);
 					}
 					else {
 						var resync = new reclaim.resync();
 						this.resync = resync;
-						resync.init(this, 0, 10, result);
+						resync.init(this, 0, 10, result, o);
 						resync.run();
 					}
 				}, this));
@@ -139,21 +141,30 @@ jQuery(document).ready(function($) {
 	
 	reclaim.resync = function () {};
 	reclaim.resync.prototype = {
-		init : function (reclaim, offset, limit, count) {
+		init : function (reclaim, offset, limit, count, options) {
 			this.r = reclaim;
 			this.limit = limit;
 			this.count = count;
 			this.start_date = new Date();
-			// first offset
-			this.data = {
-				offset : offset
+			
+			// clear options from field offset
+			if (options) {
+				delete options.offset;
 			}
+			
+			this.options = options;
+			
+			// first offset
+			this.data = $.extend({
+				offset : offset
+			}, this.options);
 			
 			this.aborted = false;
 		},
 	
 		run : function () {
-			this.r.ajax_start('Resync ' + (this.count - this.data.offset) + ' items...');
+			if (this.count == 999999) { this.r.ajax_start(admin_reclaim_script_translation.Resyncing_items + this.data.offset); }
+			else { this.r.ajax_start(admin_reclaim_script_translation.Resyncing_items + (this.count - this.data.offset) ); }
 			
 			// take these values always from config
 			this.data['limit'] = this.limit;
@@ -163,17 +174,17 @@ jQuery(document).ready(function($) {
 				var offset = parseInt(result.offset);
 				// wrong implementation
 				if (isNaN(offset)) {
-					this.r.ajax_end('result.offset is not a number: value='+result.offset);
+					this.r.ajax_end(admin_reclaim_script_translation.result_offset_is_not_a_number+result.offset);
 				}
 				// end
 				else if (this.aborted || offset <= this.data.offset || this.count <= offset) {
-					this.r.ajax_end(Math.min(offset, this.count) + ' items resynced, duration: '+this.duration());
+					this.r.ajax_end(Math.min(offset, this.count) + admin_reclaim_script_translation.items_resynced_duration+this.duration());
 				}
 				// next
 				else {
 					// copy the result into data and send
 					// it to the next iteration
-					this.data = $.extend(this.data, result);
+					this.data = $.extend(this.data, result, this.options);
 					this.run();
 				}
 			}, this));
